@@ -1,54 +1,78 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { api, getToken, clearToken } from "@/lib/api";
+import AuthScreen from "@/components/AuthScreen";
+import ContextMap from "@/components/ContextMap";
+import ZenFrame from "@/components/ZenFrame";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [bootChecked, setBootChecked] = useState(false);
+  const [topics, setTopics] = useState([]);
+  const [activeTopic, setActiveTopic] = useState(null); // when set → Zen mode
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
+  // boot: try existing token
   useEffect(() => {
-    helloWorldApi();
+    if (!getToken()) {
+      setBootChecked(true);
+      return;
+    }
+    api
+      .get("/auth/me")
+      .then(({ data }) => setUser(data))
+      .catch(() => clearToken())
+      .finally(() => setBootChecked(true));
   }, []);
 
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
+  // load topics whenever user changes
+  useEffect(() => {
+    if (!user) return;
+    api
+      .get("/topics")
+      .then(({ data }) => setTopics(data))
+      .catch(() => {});
+  }, [user, activeTopic]); // refresh on returning from Zen
 
-function App() {
+  function handleLogout() {
+    clearToken();
+    setUser(null);
+    setTopics([]);
+    setActiveTopic(null);
+  }
+
+  if (!bootChecked) {
+    return (
+      <div className="w-full h-screen bg-black flex items-center justify-center">
+        <div className="font-mono text-xs text-zinc-700 tracking-widest">
+          ·· initializing canvas
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <AuthScreen onAuthed={(u) => setUser(u)} />;
+
   return (
     <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AnimatePresence mode="wait">
+        {activeTopic ? (
+          <ZenFrame
+            key="zen"
+            topic={activeTopic}
+            user={user}
+            onExit={() => setActiveTopic(null)}
+          />
+        ) : (
+          <ContextMap
+            key="map"
+            topics={topics}
+            user={user}
+            onLogout={handleLogout}
+            onPickTopic={(t) => setActiveTopic(t)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-
-export default App;
