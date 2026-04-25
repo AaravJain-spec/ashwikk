@@ -1,63 +1,75 @@
 # StudyOS / ContextOS — PRD
 
 ## Original problem statement
-Build a behavior-adaptive study OS with a "Dynamic Canvas" UI that morphs to the
-student's cognitive state — three views (Zen Execution Frame, 3D Context Map,
-Socratic Sidekick) on an OLED-black canvas with a single signature accent.
-User chose: all five (full scope) + "surprise me" on the accent.
+Behavior-adaptive study OS as a Dynamic Canvas. Round 2: pivot to **Quiet
+Luxury / High-End Academic Minimalism** — NO dark mode, NO pure black.
+Champagne Cream + Burnt Sienna + Muted Gold, Playfair Display + Instrument
+Sans, watercolor topography, wax-seal CTA, Bento dashboard, struggle-sensitive
+breathing background, priority engine, premium-paper Flow Frame.
 
 ## Architecture
-- **Backend**: FastAPI + Motor (async MongoDB), JWT auth (HS256, bcrypt), Claude
-  Sonnet 4.5 (`claude-sonnet-4-5-20250929`) via `emergentintegrations.LlmChat` +
-  Emergent Universal LLM key.
-- **Frontend**: React 19 + framer-motion (single-page Dynamic Canvas state
-  machine: auth → ContextMap ↔ ZenFrame; SocraticSidekick slides in over Zen).
+- **Backend**: FastAPI + Motor (async MongoDB), JWT auth (HS256, bcrypt).
+  Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) via `emergentintegrations.LlmChat`
+  + Emergent Universal LLM key. Topics now carry `last_touched_at` (set on
+  session start) for the priority engine's TimeDecay term.
+- **Frontend**: React 19 + framer-motion + lucide-react. Single-page state
+  machine (Auth → BentoDashboard ↔ FlowFrame; SocraticSidekick slide-in
+  overlay). `useContextEngine` hook fuses idle / velocity / replays into a
+  smoothed CognitiveLoad ∈ [0,1]; isStruggling = load > 0.8 toggles
+  `body.classList.struggling` for the global cream→warm-cream morph.
 - **MongoDB collections**: `users`, `topics`, `sessions`, `chat_messages`.
-- **Design**: OLED black (#000) + Glacial Cyan (#00F0FF) primary + Warm Amber
-  (#FF9500) struggle. Fonts: Clash Display / Manrope / JetBrains Mono.
 
-## Core requirements (static)
-- JWT auth (signup/login/me).
-- Auto-seed 10 default topics with x/y coordinates + mastery on first login.
-- Sessions with timer, struggle score, mastery_delta on completion.
-- Socratic AI chat (multi-turn, persistent history).
-- Topographical map: peaks (mastery>50) + valleys (<=50) + glowing "Next Path"
-  through the 5 weakest topics.
-- Zen Frame: glassmorphic card, breathing border (cyan→amber when struggle>60),
-  hoverable difficult terms with quick-reference popovers, ghost-text nudges.
+## Visual language
+- **Background**: #FDFBF7 (Champagne Cream); struggle: #FFF5F0
+- **Card**: #F2EDE4 (Soft Linen) + 1px #E5DED0 hairline
+- **Accents**: #A35C44 Burnt Sienna (CTAs, struggle ring), #C5A059 Muted Gold
+  (rules, Roman pillars, secondary)
+- **Type**: Playfair Display (serif), Instrument Sans (UI), Instrument Serif
+  (italic body)
+- **Signature element**: tactile **wax-seal** button (radial-gradient sienna +
+  embossed inner shadow + lift on hover)
+- **Mastery topography**: blurred radial-gradient watercolor blobs (sienna
+  saturation maps to mastery), italic serif labels — no bars, no harsh edges.
 
-## What's been implemented (2026-04-25)
-- Full backend (`/app/backend/server.py`) — all endpoints listed below.
-- Full frontend: `AuthScreen`, `ContextMap` (SVG topographical), `ZenFrame`
-  (glassmorphic + breathing pulse + HUD + quick-refs + ghost nudges),
-  `SocraticSidekick` (slide-in chat panel with multi-turn history).
-- Real Claude Sonnet 4.5 wired in for the Sidekick.
-- Idempotent default-topic seeding for new users.
-- Tested end-to-end by testing agent — **18/18 backend tests pass, all
-  frontend Playwright flows pass, zero bugs**.
+## Core implementations (2026-04-25)
+- Auth: `/auth/signup`, `/auth/login`, `/auth/me` (JWT)
+- Topics: `/topics` (now with `last_touched_at`)
+- Sessions: `/sessions/start` (writes last_touched_at), `/struggle`, `/end`,
+  `/sessions`
+- Socratic chat: `/chat/socratic`, `/chat/history` — multi-turn Claude 4.5
+- `useContextEngine`: idleTime + inputVelocity (chars/s over 6s window) +
+  videoReplayCount (`recordReplay()`); manual override window (6s sticky) for
+  demo + tests via `setLoadOverride`.
+- `priorityEngine.js`: `Priority = MasteryGap*0.5 + TimeDecay*0.3 -
+  Confidence*0.2`; HALF_LIFE_DAYS = 7 (saturating exponential decay); untouched
+  topics get full decay = 1.
+- `BentoDashboard`: Daily Intent hero, wax-seal Next Action card (priority
+  engine pick + reason), Mastery Topography watercolor SVG, today/state
+  micro-cards, Reading Room (recent sessions), The Stack (priority list).
+- `FlowFrame`: scaled-down + fade-out via AnimatePresence; central "premium
+  sheet of paper" with serif title + gold rule + italic body, hover
+  quick-reference cards on difficult terms, large serif timer, mastery readout,
+  notes pad, dev cogload slider, breathing border (sienna→amber on struggle).
+- `SocraticSidekick`: editorial column. When struggle is detected (edge), the
+  panel **auto-opens** with a Socratic Hint card. Manual chat with Claude 4.5
+  with multi-turn history.
 
-## API surface
-- `POST /api/auth/signup` `{email, password, name}` → `{token, user}`
-- `POST /api/auth/login` `{email, password}` → `{token, user}`
-- `GET  /api/auth/me`
-- `GET  /api/topics`
-- `POST /api/sessions/start` `{topic_id, duration_minutes}`
-- `POST /api/sessions/{id}/struggle` `{struggle_score}`
-- `POST /api/sessions/{id}/end` `{mastery_delta}`
-- `GET  /api/sessions`
-- `POST /api/chat/socratic` `{session_id, text, struggle_score}`
-- `GET  /api/chat/history?session_id=`
+## Test status
+- Backend: **19/19 pytest** (iteration 3, 100%).
+- Frontend: full Playwright flows pass (iteration 2, 98%; UI not retested in
+  iter 3 because no UI changes were made).
 
 ## Backlog (P1/P2)
-- P1: Real R3F 3D map (currently SVG topographical — looks great but is 2D).
-- P1: Automatic struggle detection (typing pauses, scroll thrash, time-on-term)
-  instead of the current manual slider proxy.
-- P1: "Gesture-Based Queries" — drag-to-circle a region and feed it to Claude.
-- P2: Streaming responses for the Sidekick (currently waits for full reply).
-- P2: Optimize chat replay — current implementation re-sends history each call.
-- P2: Differentiate "exit without grading" vs "fail" instead of always
-  applying `mastery_delta = -1` on exit.
-- P2: Split `ZenFrame.jsx` (~415 lines) into smaller composed pieces.
+- P1: Real automatic struggle detection via signal blending only (already
+  works; the dev slider is purely a demo/test affordance — could be hidden
+  behind a feature flag for production).
+- P1: Gesture-based "circle a region of a diagram" → Hint Bridge popup.
+- P2: Streaming Sidekick replies; optimize chat history replay.
+- P2: Hydration warning investigation: testing agent flagged a possible
+  `<span> in <option>` warning; not reproduced in latest run.
+- P2: Split FlowFrame.jsx into smaller components.
+- P2: Topographical 3D map upgrade with react-three-fiber (current SVG
+  watercolor is on-brand; 3D could be a future Volume II enhancement).
 
 ## Next tasks
 - Wait for user feedback / new requests.
