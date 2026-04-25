@@ -33,6 +33,11 @@ def signup_user():
     state["token"] = data["token"]
     state["user"] = data["user"]
     state["headers"] = {"Authorization": f"Bearer {data['token']}", "Content-Type": "application/json"}
+    # Backend no longer auto-seeds topics on signup; use /syllabus/skip to seed
+    # the default 10 sample topics so the rest of this suite (which assumes
+    # those topics exist) keeps working.
+    rs = requests.post(f"{API}/syllabus/skip", headers=state["headers"], timeout=15)
+    assert rs.status_code == 200, f"skip-onboarding failed: {rs.status_code} {rs.text}"
     yield
 
 

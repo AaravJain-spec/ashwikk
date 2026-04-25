@@ -19,11 +19,15 @@ import bcrypt
 import jwt
 from dotenv import load_dotenv
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import (
+    APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile, status,
+)
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
+
+from national_syllabi import NATIONAL_SYLLABI, get_syllabus, list_countries
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -87,6 +91,11 @@ class UserOut(BaseModel):
     id: str
     email: EmailStr
     name: str
+    country: Optional[str] = None
+    class_level: Optional[str] = None
+    syllabus_source: Optional[str] = None  # "national" | "uploaded" | None
+    syllabus_name: Optional[str] = None    # e.g. "CBSE NCERT" or filename
+    onboarded: bool = False
 
 
 class Topic(BaseModel):
@@ -192,6 +201,157 @@ async def _seed_topics_for(user_id: str) -> None:
     await db.topics.insert_many(docs)
 
 
+def _user_to_out(user: dict) -> "UserOut":
+    return UserOut(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        country=user.get("country"),
+        class_level=user.get("class_level"),
+        syllabus_source=user.get("syllabus_source"),
+        syllabus_name=user.get("syllabus_name"),
+        onboarded=bool(user.get("onboarded", False)),
+    )
+
+
+def _layout_topics(subjects: dict) -> list[dict]:
+    """Lay out subject→[topics] dict as bands of nodes on the topography map.
+
+    Each subject is one horizontal band. Topics spread evenly along x within
+    the band. Returns list of {name, domain, mastery, x, y}.
+    """
+    out: list[dict] = []
+    subject_keys = list(subjects.keys())
+    n_bands = max(1, len(subject_keys))
+    for bi, subj in enumerate(subject_keys):
+        # band y in (0.12 .. 0.92) with vertical jitter
+        y_base = 0.12 + (bi + 0.5) / n_bands * 0.8
+        topics = subjects[subj]
+        n = max(1, len(topics))
+        for ti, topic_name in enumerate(topics):
+            x = 0.06 + (ti + 0.5) / n * 0.88
+            jitter = 0.04 * ((bi + ti) % 3 - 1)
+            out.append({
+                "name": str(topic_name).strip(),
+                "domain": subj,
+                "mastery": 25,  # everyone starts at low mastery on a fresh syllabus
+                "x": round(max(0.02, min(0.98, x)), 3),
+                "y": round(max(0.05, min(0.95, y_base + jitter)), 3),
+            })
+    return out
+
+
+async def _apply_syllabus_for_user(
+    user_id: str,
+    subjects: dict,
+    source: str,
+    name: str,
+    country: Optional[str] = None,
+    class_level: Optional[str] = None,
+) -> int:
+    """Replace user's topics with the given syllabus subjects→topics map.
+
+    Returns count of topics inserted.
+    """
+    # wipe existing
+    await db.topics.delete_many({"user_id": user_id})
+
+    laid = _layout_topics(subjects)
+    docs = []
+    for t in laid:
+        docs.append({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "name": t["name"],
+            "domain": t["domain"],
+            "mastery": t["mastery"],
+            "x": t["x"],
+            "y": t["y"],
+            "last_touched_at": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    if docs:
+        await db.topics.insert_many(docs)
+
+    update: dict = {
+        "syllabus_source": source,
+        "syllabus_name": name,
+        "onboarded": True,
+    }
+    if country:
+        update["country"] = country
+    if class_level:
+        update["class_level"] = str(class_level)
+
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    return len(docs)
+
+
+async def _parse_syllabus_text(raw_text: str) -> dict:
+    """Use Claude Sonnet 4.5 to turn raw syllabus text into a subjects→topics map."""
+    text = raw_text.strip()
+    if not text:
+        raise HTTPException(400, "syllabus text is empty")
+    # cap input to keep latency / token costs in check
+    text = text[:18000]
+
+    sys_msg = (
+        "You parse academic syllabi. Given the text, extract a JSON object "
+        "describing the structure. Return ONLY valid JSON, with no commentary "
+        "and no markdown fencing, in this exact shape:\n"
+        '{"subjects": {"Subject Name": ["chapter 1", "chapter 2", ...]}}\n'
+        "Rules:\n"
+        "- Use 1-8 subjects.\n"
+        "- 4-25 chapters per subject.\n"
+        "- Use plain Title Case names.\n"
+        "- If the document is a single subject, still return one subject.\n"
+        "- Skip preamble, exam patterns, and assessment sections.\n"
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"parse-{uuid.uuid4()}",
+        system_message=sys_msg,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    try:
+        reply = await chat.send_message(
+            UserMessage(text=f"SYLLABUS TEXT:\n\n{text}")
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"AI parse failed: {e}") from e
+
+    import json as _json
+    s = str(reply).strip()
+    # tolerate ```json fences
+    if s.startswith("```"):
+        s = s.split("```", 2)[1] if "```" in s else s
+        if s.startswith("json"):
+            s = s[4:]
+        s = s.strip("` \n")
+    try:
+        data = _json.loads(s)
+    except _json.JSONDecodeError as e:
+        # Last resort: try to slice from first { to last }
+        try:
+            i = s.index("{")
+            j = s.rindex("}")
+            data = _json.loads(s[i:j + 1])
+        except Exception:
+            raise HTTPException(502, f"AI returned non-JSON: {e}") from e
+
+    subjects = data.get("subjects") or {}
+    # normalize
+    cleaned: dict = {}
+    for k, v in subjects.items():
+        if not isinstance(v, list):
+            continue
+        topics = [str(x).strip() for x in v if str(x).strip()]
+        if topics:
+            cleaned[str(k).strip()] = topics[:30]
+    if not cleaned:
+        raise HTTPException(422, "no subjects/topics found in document")
+    return cleaned
+
+
 # ─── routes: auth ──────────────────────────────────────────────────────────
 @api.get("/")
 async def root():
@@ -209,13 +369,17 @@ async def signup(body: SignupIn):
         "email": email,
         "name": body.name.strip(),
         "password_hash": _hash_pw(body.password),
+        "country": None,
+        "class_level": None,
+        "syllabus_source": None,
+        "syllabus_name": None,
+        "onboarded": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(user_doc)
-    await _seed_topics_for(user_id)
     return TokenOut(
         token=_make_token(user_id),
-        user=UserOut(id=user_id, email=email, name=body.name.strip()),
+        user=_user_to_out(user_doc),
     )
 
 
@@ -225,16 +389,163 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"email": email})
     if not user or not _verify_pw(body.password, user["password_hash"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
-    await _seed_topics_for(user["id"])
     return TokenOut(
         token=_make_token(user["id"]),
-        user=UserOut(id=user["id"], email=user["email"], name=user["name"]),
+        user=_user_to_out(user),
     )
 
 
 @api.get("/auth/me", response_model=UserOut)
 async def me(user=Depends(current_user)):
-    return UserOut(id=user["id"], email=user["email"], name=user["name"])
+    return _user_to_out(user)
+
+
+# ─── routes: profile ───────────────────────────────────────────────────────
+class ProfileUpdate(BaseModel):
+    country: Optional[str] = None
+    class_level: Optional[str] = None
+
+
+@api.put("/profile", response_model=UserOut)
+async def update_profile(body: ProfileUpdate, user=Depends(current_user)):
+    update: dict = {}
+    if body.country is not None:
+        update["country"] = body.country.strip() or None
+    if body.class_level is not None:
+        update["class_level"] = (body.class_level or "").strip() or None
+    if not update:
+        return _user_to_out(user)
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return _user_to_out(fresh)
+
+
+# ─── routes: syllabus ──────────────────────────────────────────────────────
+@api.get("/syllabus/options")
+async def syllabus_options():
+    """List supported countries + their class levels."""
+    countries = []
+    for c in list_countries():
+        classes = sorted(
+            NATIONAL_SYLLABI[c["country"]]["classes"].keys(),
+            key=lambda x: int(x),
+        )
+        countries.append({**c, "classes": classes})
+    return {"countries": countries}
+
+
+@api.get("/syllabus/national")
+async def syllabus_national_preview(country: str, class_level: str):
+    sy = get_syllabus(country, class_level)
+    if not sy:
+        raise HTTPException(404, "no national syllabus for that country/class")
+    counts = {k: len(v) for k, v in sy["subjects"].items()}
+    return {
+        "country": sy["country"],
+        "class_level": sy["class_level"],
+        "name": sy["name"],
+        "flag": sy["flag"],
+        "subjects": sy["subjects"],
+        "subject_counts": counts,
+        "total_topics": sum(counts.values()),
+    }
+
+
+class ApplyNationalIn(BaseModel):
+    country: str
+    class_level: str
+
+
+@api.post("/syllabus/apply-national", response_model=UserOut)
+async def syllabus_apply_national(body: ApplyNationalIn, user=Depends(current_user)):
+    sy = get_syllabus(body.country, body.class_level)
+    if not sy:
+        raise HTTPException(404, "no national syllabus for that country/class")
+    await _apply_syllabus_for_user(
+        user["id"],
+        subjects=sy["subjects"],
+        source="national",
+        name=sy["name"],
+        country=body.country,
+        class_level=body.class_level,
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return _user_to_out(fresh)
+
+
+@api.post("/syllabus/upload", response_model=UserOut)
+async def syllabus_upload(
+    file: Optional[UploadFile] = File(None),
+    text: Optional[str] = Form(None),
+    country: Optional[str] = Form(None),
+    class_level: Optional[str] = Form(None),
+    syllabus_name: Optional[str] = Form(None),
+    user=Depends(current_user),
+):
+    """Accept a PDF or plain-text file, OR pasted text. Parse with Claude
+    into subjects→topics, then replace the user's topic list."""
+    raw_text = (text or "").strip()
+    display_name = (syllabus_name or "").strip() or "uploaded"
+
+    if file:
+        content = await file.read()
+        if not content:
+            raise HTTPException(400, "uploaded file is empty")
+        if not display_name or display_name == "uploaded":
+            display_name = file.filename or "uploaded"
+
+        fname = (file.filename or "").lower()
+        if fname.endswith(".pdf") or (file.content_type and "pdf" in file.content_type):
+            try:
+                from io import BytesIO
+                from pypdf import PdfReader
+                reader = PdfReader(BytesIO(content))
+                pages_text = []
+                for p in reader.pages[:60]:  # cap pages
+                    try:
+                        pages_text.append(p.extract_text() or "")
+                    except Exception:
+                        continue
+                raw_text = "\n".join(pages_text).strip()
+            except Exception as e:
+                raise HTTPException(400, f"could not read PDF: {e}") from e
+        else:
+            try:
+                raw_text = content.decode("utf-8", errors="ignore").strip()
+            except Exception as e:
+                raise HTTPException(400, f"could not read text file: {e}") from e
+
+    if not raw_text:
+        raise HTTPException(400, "no syllabus text or file provided")
+
+    subjects = await _parse_syllabus_text(raw_text)
+    await _apply_syllabus_for_user(
+        user["id"],
+        subjects=subjects,
+        source="uploaded",
+        name=display_name,
+        country=country,
+        class_level=class_level,
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return _user_to_out(fresh)
+
+
+@api.post("/syllabus/skip", response_model=UserOut)
+async def syllabus_skip(user=Depends(current_user)):
+    """Mark the user as onboarded without applying a syllabus — falls back to
+    the default seeded sample topics."""
+    await _seed_topics_for(user["id"])
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "onboarded": True,
+            "syllabus_source": "default",
+            "syllabus_name": "Sample topics",
+        }},
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    return _user_to_out(fresh)
 
 
 # ─── routes: topics ────────────────────────────────────────────────────────

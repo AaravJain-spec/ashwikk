@@ -26,6 +26,7 @@ export default function BentoDashboard({
   onPickTopic,
   onLogout,
   onOpenSidekick,
+  onChangeSyllabus,
   cognitiveLoad,
   isStruggling,
 }) {
@@ -56,12 +57,39 @@ export default function BentoDashboard({
     >
       {/* Top masthead */}
       <div className="relative z-10 max-w-[1320px] mx-auto px-10 lg:px-16 pt-10 flex items-center justify-between">
-        <div className="flex items-baseline gap-3">
-          <span className="font-serif italic text-2xl text-[#a35c44]">
-            studyos
-          </span>
-          <span className="rule-gold w-16" />
-          <span className="eyebrow">·· vol. i · context</span>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-baseline gap-3">
+            <span className="font-serif italic text-2xl text-[#a35c44]">
+              studyos
+            </span>
+            <span className="rule-gold w-16" />
+            <span className="eyebrow">·· vol. i · context</span>
+          </div>
+          {user?.syllabus_name && (
+            <button
+              onClick={onChangeSyllabus}
+              data-testid="syllabus-chip"
+              title="change syllabus"
+              className="flex items-center gap-2 px-4 h-9 rounded-full border border-[#e5ded0] hover:border-[#a35c44] bg-[#fffaf2] text-xs font-sans text-[#5b4f44] hover:text-[#a35c44] transition-colors"
+            >
+              <span className="font-instrument-serif italic text-[#c5a059]">
+                ·
+              </span>
+              <span className="tracking-wide">
+                {user.syllabus_name}
+                {user.class_level && (
+                  <>
+                    {" "}
+                    <span className="text-[#9b8e7e]">·</span> class{" "}
+                    {user.class_level}
+                  </>
+                )}
+              </span>
+              <span className="text-[10px] text-[#9b8e7e] tracking-widest uppercase">
+                change
+              </span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-8">
           <div className="hidden md:block text-right">
@@ -369,6 +397,9 @@ export default function BentoDashboard({
 function Watercolor({ topics, onPick }) {
   // sort to layer the strongest blobs on top
   const sorted = [...topics].sort((a, b) => a.mastery - b.mastery);
+  // group topics by domain to draw subject labels
+  const domains = Array.from(new Set(sorted.map((t) => t.domain)));
+  const showLabels = sorted.length <= 14;
   return (
     <div className="relative mt-5 h-[230px] w-full" data-testid="topography-svg">
       <svg
@@ -403,18 +434,18 @@ function Watercolor({ topics, onPick }) {
           </filter>
         </defs>
 
-        {/* watercolor blobs */}
-        {sorted.map((t, i) => {
-          const cx = (i / Math.max(1, sorted.length - 1)) * 760 + 20;
-          const cy = 115 + Math.sin(i * 1.3) * 35;
-          const r = 60 + (t.mastery / 100) * 70;
+        {/* watercolor blobs — placed at backend-provided x/y for subject bands */}
+        {sorted.map((t) => {
+          const cx = (t.x ?? 0.5) * 800;
+          const cy = (t.y ?? 0.5) * 200 + 10;
+          const r = 38 + (t.mastery / 100) * 60;
           return (
             <g key={t.id} filter="url(#wcBlur)">
               <ellipse
                 cx={cx}
                 cy={cy}
                 rx={r}
-                ry={r * 0.78}
+                ry={r * 0.7}
                 fill={`url(#wc-${t.id})`}
               />
             </g>
@@ -425,36 +456,57 @@ function Watercolor({ topics, onPick }) {
         <line
           x1="20"
           x2="780"
-          y1="200"
-          y2="200"
+          y1="218"
+          y2="218"
           stroke="#e5ded0"
           strokeDasharray="2 6"
         />
 
-        {/* topic labels — minimal */}
-        {sorted.map((t, i) => {
-          const cx = (i / Math.max(1, sorted.length - 1)) * 760 + 20;
+        {/* subject domain labels along the bottom */}
+        {domains.map((d, i) => {
+          const x = 20 + ((i + 0.5) / domains.length) * 760;
           return (
-            <g
-              key={`lbl-${t.id}`}
-              onClick={() => onPick(t)}
-              style={{ cursor: "pointer" }}
-              data-testid={`topo-label-${t.id}`}
+            <text
+              key={d}
+              x={x}
+              y={228}
+              textAnchor="middle"
+              fontFamily="Instrument Sans, sans-serif"
+              fontSize="9"
+              letterSpacing="0.18em"
+              fill="#9b8e7e"
             >
-              <text
-                x={cx}
-                y={222}
-                textAnchor="middle"
-                fontFamily="Playfair Display, serif"
-                fontStyle="italic"
-                fontSize="11"
-                fill="#5b4f44"
-              >
-                {t.name.toLowerCase()}
-              </text>
-            </g>
+              {d.toUpperCase()}
+            </text>
           );
         })}
+
+        {/* topic labels — only when sparse enough to read */}
+        {showLabels &&
+          sorted.map((t) => {
+            const cx = (t.x ?? 0.5) * 800;
+            const cy = (t.y ?? 0.5) * 200 + 10;
+            return (
+              <g
+                key={`lbl-${t.id}`}
+                onClick={() => onPick(t)}
+                style={{ cursor: "pointer" }}
+                data-testid={`topo-label-${t.id}`}
+              >
+                <text
+                  x={cx}
+                  y={cy + 4}
+                  textAnchor="middle"
+                  fontFamily="Playfair Display, serif"
+                  fontStyle="italic"
+                  fontSize="10"
+                  fill="#5b4f44"
+                >
+                  {t.name.toLowerCase()}
+                </text>
+              </g>
+            );
+          })}
       </svg>
     </div>
   );

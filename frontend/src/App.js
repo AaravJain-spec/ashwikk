@@ -5,6 +5,7 @@ import { api, getToken, clearToken } from "@/lib/api";
 import AuthScreen from "@/components/AuthScreen";
 import BentoDashboard from "@/components/BentoDashboard";
 import FlowFrame from "@/components/FlowFrame";
+import Onboarding from "@/components/Onboarding";
 import SocraticSidekick from "@/components/SocraticSidekick";
 import useContextEngine from "@/hooks/useContextEngine";
 
@@ -17,6 +18,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState(null);
   const [sidekickOpen, setSidekickOpen] = useState(false);
   const [autoHint, setAutoHint] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const ctx = useContextEngine();
   const struggleEdgeRef = useRef(false);
@@ -29,14 +31,17 @@ export default function App() {
     }
     api
       .get("/auth/me")
-      .then(({ data }) => setUser(data))
+      .then(({ data }) => {
+        setUser(data);
+        if (!data.onboarded) setShowOnboarding(true);
+      })
       .catch(() => clearToken())
       .finally(() => setBootChecked(true));
   }, []);
 
-  // refresh topics + sessions when user changes or session ends
+  // load topics + sessions whenever user changes (and after a session)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.onboarded) return;
     Promise.all([api.get("/topics"), api.get("/sessions")])
       .then(([t, s]) => {
         setTopics(t.data);
@@ -45,13 +50,12 @@ export default function App() {
       .catch(() => {});
   }, [user, activeTopic]);
 
-  // when a session is started by FlowFrame, capture it for the sidekick
+  // poll for active session on flow entry
   useEffect(() => {
     if (!activeTopic) {
       setActiveSession(null);
       return;
     }
-    // poll briefly until FlowFrame creates the session
     let cancelled = false;
     let attempts = 0;
     const tick = async () => {
@@ -76,7 +80,6 @@ export default function App() {
     };
   }, [activeTopic]);
 
-  // when struggle starts, auto-open the sidekick with a hint card
   useEffect(() => {
     if (ctx.isStruggling && !struggleEdgeRef.current) {
       struggleEdgeRef.current = true;
@@ -95,6 +98,17 @@ export default function App() {
     setSessions([]);
     setActiveTopic(null);
     setSidekickOpen(false);
+    setShowOnboarding(false);
+  }
+
+  function handleAuthed(u) {
+    setUser(u);
+    if (!u.onboarded) setShowOnboarding(true);
+  }
+
+  function handleOnboardingDone(u) {
+    setUser(u);
+    setShowOnboarding(false);
   }
 
   if (!bootChecked) {
@@ -107,7 +121,11 @@ export default function App() {
     );
   }
 
-  if (!user) return <AuthScreen onAuthed={(u) => setUser(u)} />;
+  if (!user) return <AuthScreen onAuthed={handleAuthed} />;
+
+  if (showOnboarding) {
+    return <Onboarding user={user} onDone={handleOnboardingDone} />;
+  }
 
   return (
     <div className="App">
@@ -140,6 +158,7 @@ export default function App() {
               setSidekickOpen(true);
               setAutoHint(false);
             }}
+            onChangeSyllabus={() => setShowOnboarding(true)}
           />
         )}
       </AnimatePresence>
