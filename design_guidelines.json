@@ -1,0 +1,91 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast) + Terminal/Technical Hybrid",
+  "emotional_tone": "calm, precise, slightly otherworldly, high-end neuro-tech instrument",
+  "colors": {
+    "background": "#000000",
+    "surface_1": "#0A0A0A",
+    "surface_2": "#141414",
+    "primary_accent": "#00F0FF",
+    "struggle_accent": "#FF9500",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A1A1AA",
+    "text_ghost": "#52525B",
+    "border_subtle": "#27272A"
+  },
+  "typography": {
+    "heading_font": "Clash Display",
+    "body_font": "Manrope",
+    "mono_font": "JetBrains Mono",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-medium",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "h3": "text-xl sm:text-2xl",
+      "body": "text-base leading-relaxed text-zinc-400",
+      "caption": "text-xs font-mono tracking-[0.2em] uppercase text-zinc-500"
+    }
+  },
+  "layout_and_spacing": {
+    "philosophy": "Generous Spacing, Optical Alignment, Minimalist HUD",
+    "bento_grid": "grid-cols-1 md:grid-cols-12 gap-8",
+    "containers": "p-8 or p-12 for inner breathing room. Glassmorphic containers must have subtle inner 1px borders."
+  },
+  "motion_and_interactions": {
+    "library": "framer-motion",
+    "transitions": "Smooth fluid transitions between Context Map and Zen Frame (layoutId tracking)",
+    "zen_pulse_normal": "Breathing animation on box-shadow and border-color using cyan (#00F0FF) with 4s ease-in-out infinite",
+    "zen_pulse_struggle": "Breathing animation transitions to warm amber (#FF9500) indicating cognitive load",
+    "hover_states": "Quick-Reference cards fade in with y-axis slight lift (-translate-y-1) and backdrop blur"
+  },
+  "components": {
+    "zen_execution_frame": {
+      "wrapper": "Absolute center, max-w-3xl w-full mx-auto",
+      "surface": "Crystal Glassmorphism: bg-black/40 backdrop-blur-2xl border border-white/10 rounded-3xl",
+      "pulse_border": "Dynamic inset shadow and outer glow ring. Normal: shadow-[0_0_30px_rgba(0,240,255,0.15)]. Struggle: shadow-[0_0_30px_rgba(255,149,0,0.2)]"
+    },
+    "context_map": {
+      "library": "react-three-fiber, @react-three/drei",
+      "visualization": "3D topographical map using displacement maps. High peaks = bright cyan glow, low valleys = deep dark grey.",
+      "path_line": "Glowing neon cyan tube geometry snaking through the terrain",
+      "camera": "Top-down isometric angle, slowly rotating or following the 'Next Path'"
+    },
+    "socratic_sidekick": {
+      "ghost_text": "Absolute positioned in margins. text-zinc-600 font-mono text-sm. Appears as thought-nudges.",
+      "hint_bridge": "Floating popover card triggered by text selection/gesture. bg-zinc-900 border border-zinc-800 shadow-2xl p-4 rounded-xl"
+    },
+    "testing": "All interactive elements MUST have data-testid attributes (e.g., data-testid='start-session-btn')"
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/779dfd85-9eda-4670-a5c0-1faf4ebe8968/images/5cb46fd1bb852065bb1e84b693321bbf25b8b8a54615d838edf824cef053f996.png",
+        "description": "Dark minimalist UI workspace background with subtle bioluminescent cyan glow",
+        "placement": "Used as the underlying ambient background behind the Zen Execution Frame when not in 3D map mode."
+      },
+      {
+        "category": "3d_visualization_reference",
+        "url": "https://static.prod-images.emergentagent.com/jobs/779dfd85-9eda-4670-a5c0-1faf4ebe8968/images/2d36e07567be9b7e551da9b59a748440087d188aae4ba0d36eeb11bd42ce2581.png",
+        "description": "3D topographical map with glowing peaks and cyan path",
+        "placement": "Visual reference or fallback texture for the Context Map dashboard."
+      },
+      {
+        "category": "knowledge_nodes_abstract",
+        "url": "https://static.prod-images.emergentagent.com/jobs/779dfd85-9eda-4670-a5c0-1faf4ebe8968/images/134df6eb19e41869d1e46694a61aee349e8f34fe033f24508de46a33d7f1e615.png",
+        "description": "Abstract 3D network nodes representing knowledge connections",
+        "placement": "Decorative element for the Auth (Sign in/Sign up) side panel or onboarding screens."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Use pure OLED Black (#000000) for the main body background to achieve the 'neuro-tech instrument' feel.",
+    "Implement the Zen Execution Frame using a centered, glassmorphic card (backdrop-blur-[20px], bg-black/40) over the ambient background.",
+    "The pulse timer around the Zen Frame MUST be animated (breathing effect) and must accept a state to switch from Cyan (#00F0FF) to Amber (#FF9500) based on struggle_score.",
+    "Build the Context Map using React Three Fiber. If raw 3D topography is too complex, use the provided '3d_visualization_reference' image layered with framer-motion interactive nodes.",
+    "Place Socratic Sidekick 'Ghost Text' in the left/right margins using fixed or absolute positioning with text-zinc-600.",
+    "Ensure the 'Next Action' button is the ONLY element using the high-intensity Glacial Cyan accent fully.",
+    "Avoid Inter font. Load 'Clash Display' for headings, 'Manrope' for body, and 'JetBrains Mono' for numbers/HUD.",
+    "Add data-testid attributes to ALL interactive elements.",
+    "Provide a smooth framer-motion layout transition between the 3D map view and the Zen Execution Frame."
+  ]
+}
