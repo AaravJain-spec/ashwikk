@@ -97,7 +97,26 @@ class TestTopics:
             assert 0 <= t["mastery"] <= 100
             assert 0 <= t["x"] <= 1
             assert 0 <= t["y"] <= 1
+            # NEW: every topic must include last_touched_at field, null until first session
+            assert "last_touched_at" in t, f"missing last_touched_at on topic {t['name']}"
+            assert t["last_touched_at"] is None
         state["topics"] = topics
+
+    def test_start_session_updates_last_touched_at(self):
+        """POST /api/sessions/start must update topic.last_touched_at."""
+        topic = state["topics"][2]  # use a fresh topic not used elsewhere
+        r = requests.post(
+            f"{API}/sessions/start",
+            headers=state["headers"],
+            json={"topic_id": topic["id"], "duration_minutes": 15},
+            timeout=10,
+        )
+        assert r.status_code == 200
+        # GET topics, the touched one must now have a non-null last_touched_at
+        r2 = requests.get(f"{API}/topics", headers=state["headers"], timeout=10)
+        updated = next(t for t in r2.json() if t["id"] == topic["id"])
+        assert updated["last_touched_at"] is not None
+        assert isinstance(updated["last_touched_at"], str)
 
     def test_topics_idempotent_seed_on_login(self):
         # login again → still 10 topics, not 20

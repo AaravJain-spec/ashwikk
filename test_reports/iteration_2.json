@@ -1,0 +1,43 @@
+{
+  "summary": "Tested StudyOS Quiet Luxury redesign (backend + frontend). Found 1 CRITICAL backend bug: GET /api/topics does NOT return the new last_touched_at field — the field is set on the dict but stripped by FastAPI because the Topic Pydantic response_model (server.py L92-99) is missing the field. This caused 8 cascading pytest failures and partially breaks the Priority Engine after the first session (frontend can't see decay reset). Frontend Bento Dashboard, FlowFrame, struggle/breathing morph, sidekick auto-open, hover terms, real Claude chat, AnimatePresence transitions all PASS. Priority Engine correctly picks 'Quantum Mechanics' (mastery 18) for fresh accounts because undefined last_touched_at still yields decay=1 in priorityEngine.js.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/topics", "issue": "Response strips `last_touched_at` field. Topic Pydantic model in /app/backend/server.py (lines 92-99) does not declare last_touched_at, so FastAPI's response_model serialization removes it even though server code calls d.setdefault('last_touched_at', None) and POST /api/sessions/start writes it to the DB. Fix: add `last_touched_at: Optional[str] = None` to the Topic class.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AuthScreen / BentoDashboard", "issues": ["React console hydration warning: '<span> cannot be a child of <option>'. Likely a <select><option><span>...</span></option></select> in AuthScreen Roman-pillar block or duration-select. Non-blocking but should be cleaned up."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_studyos_api.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add `last_touched_at: Optional[str] = None` to the Topic Pydantic model in /app/backend/server.py (around line 92-99). This single change unblocks the new feature and resolves all 8 cascading pytest failures.",
+    "Investigate the '<span> cannot be a child of <option>' hydration warning — likely needs to remove a <span> inside an <option> tag."
+  ],
+  "critical_code_review_comments": [
+    "Topic response model missing last_touched_at — see CRITICAL backend issue. Without this, frontend useEffect that refreshes topics after a session can never see the updated decay → after a session, the next-action card may keep recommending the same topic instead of rotating.",
+    "FlowFrame.jsx still likely large per previous review; not re-measured this iteration.",
+    "useContextEngine setLoadOverride sets cognitiveLoad once but the next 500ms tick will not run new compute due to manualUntilRef guard. Note: the replay-btn during an active manual-override window appears to do nothing visibly because the override holds load constant for 6s (verified). Acceptable per spec but worth documenting in UI.",
+    "AuthScreen invalid HTML: a <span> nested inside an <option> element triggers a React hydration warning."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_studyos_api.py"
+  ],
+  "success_rate": {
+    "backend": "58% (11/19 passing — 8 cascade-fail from one root-cause bug)",
+    "frontend": "98% (all required UI flows verified)"
+  },
+  "test_credentials": "/app/memory/test_credentials.md is missing. Tests use random fresh signups: test_<10hex>@example.com / test-pass-1234 against REACT_APP_BACKEND_URL. Verified working email pattern is @example.com (NOT @*.test).",
+  "seed_data_creation": "Per-signup auto-seed of 10 default topics (idempotent on relogin) — verified. New: every seeded topic now exposes last_touched_at=None in DB but NOT yet in the API response (see CRITICAL).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fix is a 1-line Pydantic addition. After fix, re-run `pytest /app/backend/tests/test_studyos_api.py -v` — expect 19/19 to pass. The frontend Playwright flow already passes end-to-end; no UI re-test needed unless server.py changes affect topic serialization further. Manual-override window for cogload-slider holds 6s, so back-to-back replay-btn clicks during override won't change readout — that's by design per useContextEngine.js. Frontend signup verified end-to-end with real Claude Sonnet 4.5 reply (~6-15s latency).",
+  "rca of the issue": "Root cause: FastAPI's `response_model=List[Topic]` on GET /api/topics strips fields not declared on the Topic Pydantic model. The dev added `d.setdefault('last_touched_at', None)` on the dict in list_topics() (server.py L246) AND added the DB write in start_session() (L268-271), but forgot to add `last_touched_at: Optional[str] = None` to the Topic class itself (L92-99). Reproduction: signup → GET /api/topics → response items have only {id,name,domain,mastery,x,y}. Mitigation: declare `last_touched_at: Optional[str] = None` on Topic; ConfigDict(extra='ignore') already permits the source dict to carry it through."
+}

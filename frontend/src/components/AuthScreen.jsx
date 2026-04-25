@@ -2,18 +2,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { api, setToken } from "@/lib/api";
 
-const ErrorMsg = ({ msg }) =>
-  msg ? (
-    <div
-      data-testid="auth-error"
-      className="font-mono text-[11px] tracking-wider text-[#ff9500]"
-    >
-      ! {msg}
-    </div>
-  ) : null;
-
 export default function AuthScreen({ onAuthed }) {
-  const [mode, setMode] = useState("login"); // 'login' | 'signup'
+  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -39,85 +29,93 @@ export default function AuthScreen({ onAuthed }) {
   }
 
   return (
-    <div className="relative min-h-screen w-full bg-black text-white flex items-stretch grain">
-      {/* Left: brand panel */}
+    <div className="relative min-h-screen w-full paper text-[#2b211a] flex items-stretch">
+      {/* Left: editorial brand panel */}
       <motion.div
-        initial={{ opacity: 0, x: -20 }}
+        initial={{ opacity: 0, x: -16 }}
         animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-        className="hidden md:flex relative w-1/2 flex-col justify-between p-12 overflow-hidden topo-bg border-r border-[#141414]"
+        transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+        className="hidden md:flex relative w-[55%] flex-col justify-between p-14 lg:p-20 border-r border-[#e5ded0] z-10"
       >
-        <div className="relative z-10">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-2 h-2 rounded-full bg-[#00f0ff]"
-              style={{ boxShadow: "0 0 18px #00f0ff" }}
-            />
-            <span className="eyebrow">studyos · context-os v1</span>
-          </div>
+        <div className="flex items-baseline gap-3">
+          <span className="font-serif italic text-2xl text-[#a35c44]">
+            studyos
+          </span>
+          <span className="rule-gold flex-1 max-w-[80px]" />
+          <span className="eyebrow">vol. i · context</span>
         </div>
 
-        <div className="relative z-10 max-w-lg">
-          <h1 className="font-display text-5xl lg:text-6xl leading-[0.95] tracking-tighter">
-            a study OS
+        <div className="max-w-2xl">
+          <p className="eyebrow mb-6">·· an adaptive learning os</p>
+          <h1
+            className="font-serif text-[64px] lg:text-[88px] leading-[0.95] text-[#2b211a]"
+            style={{ letterSpacing: "-0.02em" }}
+          >
+            <span className="italic font-normal">study</span>,
             <br />
-            that <span className="glow-cyan text-[#00f0ff]">breathes</span>
-            <br />
-            with you.
+            <span className="text-[#a35c44]">unhurried</span>.
           </h1>
-          <p className="mt-6 text-zinc-400 max-w-md leading-relaxed">
-            One fluid canvas. No tabs, no menus. The interface morphs to your
-            cognitive state — calm cyan when you flow, warm amber when you
-            struggle, silent when you focus.
+          <p className="mt-8 text-lg text-[#5b4f44] leading-relaxed max-w-md font-sans">
+            Quiet luxury for the mind. One serif sheet, one wax-sealed action,
+            one warm room that breathes with you when the work gets dense.
           </p>
-          <div className="mt-10 grid grid-cols-3 gap-4 max-w-md">
+
+          <div className="mt-12 grid grid-cols-3 gap-6 max-w-lg">
             {[
-              ["zen frame", "single focal point"],
-              ["context map", "topography of you"],
-              ["sidekick", "socratic, never loud"],
-            ].map(([k, v]) => (
-              <div key={k} className="border-l border-[#27272a] pl-3">
-                <div className="eyebrow">{k}</div>
-                <div className="text-sm text-zinc-300 mt-1">{v}</div>
+              ["i.", "daily intent"],
+              ["ii.", "next action"],
+              ["iii.", "flow frame"],
+            ].map(([n, v]) => (
+              <div key={n} className="border-l border-[#e5ded0] pl-4">
+                <div className="font-serif italic text-[#c5a059] text-xl">
+                  {n}
+                </div>
+                <div className="mt-1 text-sm text-[#2b211a] font-sans">
+                  {v}
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="relative z-10 eyebrow">
-          ·· built for long-horizon reasoning · 2026
+        <div className="flex items-center justify-between eyebrow">
+          <span>·· est. 2026</span>
+          <span>edition no. 001</span>
         </div>
-
-        {/* ambient glow blob */}
-        <div
-          className="absolute -bottom-40 -left-40 w-[600px] h-[600px] rounded-full"
-          style={{
-            background:
-              "radial-gradient(circle, rgba(0,240,255,0.18) 0%, transparent 60%)",
-            filter: "blur(40px)",
-          }}
-        />
       </motion.div>
 
-      {/* Right: auth form */}
+      {/* Right: form */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.15 }}
-        className="flex-1 flex items-center justify-center p-8"
+        transition={{ duration: 0.7, delay: 0.15 }}
+        className="flex-1 flex items-center justify-center p-10 z-10"
       >
         <form
           onSubmit={submit}
           data-testid="auth-form"
-          className="w-full max-w-sm space-y-6"
+          className="w-full max-w-md space-y-7"
         >
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="eyebrow">
-              {mode === "login" ? "·· return to canvas" : "·· initialize mind"}
+              {mode === "login" ? "·· return" : "·· begin"}
             </div>
-            <h2 className="font-display text-3xl tracking-tight">
-              {mode === "login" ? "sign in" : "create account"}
+            <h2 className="font-serif text-5xl tracking-tight text-[#2b211a]">
+              {mode === "login" ? (
+                <>
+                  Welcome <span className="italic text-[#a35c44]">back</span>.
+                </>
+              ) : (
+                <>
+                  Make your <span className="italic text-[#a35c44]">mark</span>.
+                </>
+              )}
             </h2>
+            <p className="text-sm text-[#9b8e7e] font-sans">
+              {mode === "login"
+                ? "Sign in to your study room."
+                : "A quiet account, just for you."}
+            </p>
           </div>
 
           {mode === "signup" && (
@@ -146,18 +144,22 @@ export default function AuthScreen({ onAuthed }) {
             required
           />
 
-          <ErrorMsg msg={err} />
+          {err && (
+            <div
+              data-testid="auth-error"
+              className="font-sans text-[12px] text-[#a35c44] italic"
+            >
+              ! {err}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={busy}
             data-testid="auth-submit-btn"
-            className="group relative w-full h-12 rounded-full bg-[#00f0ff] text-black font-medium tracking-tight transition-all hover:bg-white disabled:opacity-50"
-            style={{ boxShadow: "0 0 40px -8px rgba(0,240,255,0.6)" }}
+            className="wax-seal w-full h-14 rounded-full text-base disabled:opacity-60"
           >
-            <span className="relative z-10">
-              {busy ? "..." : mode === "login" ? "enter" : "begin"}
-            </span>
+            {busy ? "..." : mode === "login" ? "Enter" : "Begin"}
           </button>
 
           <button
@@ -167,11 +169,11 @@ export default function AuthScreen({ onAuthed }) {
               setMode(mode === "login" ? "signup" : "login");
               setErr("");
             }}
-            className="w-full text-xs text-zinc-500 font-mono tracking-wider hover:text-[#00f0ff] transition-colors"
+            className="w-full text-xs text-[#9b8e7e] font-sans hover:text-[#a35c44] transition-colors tracking-wide"
           >
             {mode === "login"
-              ? "// no account? create one"
-              : "// already have one? sign in"}
+              ? "— no account? request one —"
+              : "— already a reader? sign in —"}
           </button>
         </form>
       </motion.div>
@@ -189,7 +191,7 @@ function Field({ label, value, onChange, type = "text", required, testid }) {
         required={required}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-transparent border-b border-[#27272a] py-2 text-base text-white placeholder-zinc-700 focus:border-[#00f0ff] transition-colors"
+        className="w-full bg-transparent border-b border-[#e5ded0] py-2 text-base text-[#2b211a] placeholder-[#c8bdab] focus:border-[#a35c44] transition-colors font-sans"
       />
     </label>
   );

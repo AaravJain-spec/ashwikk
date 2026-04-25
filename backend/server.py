@@ -242,6 +242,8 @@ async def list_topics(user=Depends(current_user)):
     docs = await db.topics.find(
         {"user_id": user["id"]}, {"_id": 0, "user_id": 0, "created_at": 0}
     ).to_list(500)
+    for d in docs:
+        d.setdefault("last_touched_at", None)
     return docs
 
 
@@ -263,6 +265,10 @@ async def start_session(body: StartSessionIn, user=Depends(current_user)):
         "mastery_delta": 0,
     }
     await db.sessions.insert_one(sess)
+    await db.topics.update_one(
+        {"id": topic["id"], "user_id": user["id"]},
+        {"$set": {"last_touched_at": sess["started_at"]}},
+    )
     return Session(**{k: v for k, v in sess.items() if k != "user_id"})
 
 

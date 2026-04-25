@@ -1,44 +1,46 @@
-@import url("https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=manrope@300,400,500,600,700&display=swap");
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --bg: #000000;
-  --surface-1: #0a0a0a;
-  --surface-2: #141414;
-  --accent: #00f0ff;
-  --accent-dim: rgba(0, 240, 255, 0.15);
-  --struggle: #ff9500;
-  --struggle-dim: rgba(255, 149, 0, 0.18);
-  --text: #ffffff;
-  --text-muted: #a1a1aa;
-  --text-ghost: #52525b;
-  --border-subtle: #27272a;
+  /* Warm editorial palette */
+  --cream: #fdfbf7;        /* primary background */
+  --cream-warm: #fff5f0;   /* breathing background on struggle */
+  --linen: #f2ede4;        /* card surface */
+  --linen-deep: #ebe4d6;   /* hover/elevated */
+  --rule: #e5ded0;         /* 1px borders */
+  --ink: #2b211a;          /* primary text (deep coffee, not black) */
+  --ink-soft: #5b4f44;     /* secondary text */
+  --ink-ghost: #9b8e7e;    /* tertiary, captions */
+  --sienna: #a35c44;       /* primary accent */
+  --sienna-deep: #8a4a36;
+  --sienna-glow: rgba(163, 92, 68, 0.25);
+  --gold: #c5a059;         /* secondary accent */
+  --gold-soft: rgba(197, 160, 89, 0.18);
 
-  /* shadcn baseline (kept so radix components don't break) */
-  --background: 0 0% 0%;
-  --foreground: 0 0% 98%;
-  --card: 0 0% 4%;
-  --card-foreground: 0 0% 98%;
-  --popover: 0 0% 4%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 184 100% 50%;
-  --primary-foreground: 0 0% 4%;
-  --secondary: 0 0% 8%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 10%;
-  --muted-foreground: 0 0% 63%;
-  --accent-h: 184 100% 50%;
-  --accent-foreground: 0 0% 4%;
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 0 0% 15%;
-  --input: 0 0% 12%;
-  --ring: 184 100% 50%;
-  --radius: 1rem;
+  /* shadcn baseline mapped to warm scheme */
+  --background: 36 50% 97%;
+  --foreground: 25 25% 14%;
+  --card: 36 40% 92%;
+  --card-foreground: 25 25% 14%;
+  --popover: 36 50% 97%;
+  --popover-foreground: 25 25% 14%;
+  --primary: 16 41% 45%;
+  --primary-foreground: 36 50% 97%;
+  --secondary: 36 30% 88%;
+  --secondary-foreground: 25 25% 14%;
+  --muted: 36 25% 90%;
+  --muted-foreground: 25 15% 40%;
+  --accent: 36 50% 65%;
+  --accent-foreground: 25 25% 14%;
+  --destructive: 16 60% 40%;
+  --destructive-foreground: 36 50% 97%;
+  --border: 35 30% 84%;
+  --input: 36 30% 88%;
+  --ring: 16 41% 45%;
+  --radius: 1.25rem;
 }
 
 * {
@@ -53,164 +55,233 @@ body,
 
 body {
   margin: 0;
-  background: #000;
-  color: var(--text);
-  font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system,
+    sans-serif;
+  font-feature-settings: "ss01", "ss02";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
+  transition: background-color 1.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Display font */
-.font-display {
-  font-family: "Clash Display", "Manrope", sans-serif;
-  letter-spacing: -0.02em;
-}
-.font-mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+body.struggling {
+  background: var(--cream-warm);
 }
 
-/* Custom selection */
+/* Display / serif type */
+.font-serif {
+  font-family: "Playfair Display", "Instrument Serif", ui-serif, Georgia, serif;
+  letter-spacing: -0.005em;
+}
+.font-instrument-serif {
+  font-family: "Instrument Serif", "Playfair Display", ui-serif, Georgia, serif;
+}
+.font-sans {
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Caption / eyebrow */
+.eyebrow {
+  font-family: "Instrument Sans", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--ink-ghost);
+  font-weight: 500;
+}
+
+/* Selection */
 ::selection {
-  background: rgba(0, 240, 255, 0.25);
-  color: #fff;
+  background: rgba(163, 92, 68, 0.18);
+  color: var(--ink);
 }
 
-/* Scrollbar (subtle) */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 3px;
+  background: var(--linen-deep);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: var(--rule);
 }
 
-/* Caption / eyebrow type */
-.eyebrow {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  color: var(--text-ghost);
+/* Paper texture (very subtle warm grain) */
+.paper {
+  background-color: var(--cream);
+  background-image:
+    radial-gradient(
+      ellipse at 30% 20%,
+      rgba(197, 160, 89, 0.05),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at 80% 80%,
+      rgba(163, 92, 68, 0.04),
+      transparent 50%
+    );
 }
-
-/* Ambient grain */
-.grain::after {
+.paper::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  opacity: 0.5;
-  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.17 0 0 0 0 0.13 0 0 0 0 0.10 0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: 0.7;
+  mix-blend-mode: multiply;
   z-index: 1;
 }
 
-/* Glassmorphic surface */
-.glass {
-  background: rgba(10, 10, 10, 0.55);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+.linen-card {
+  background: var(--linen);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 30px 80px -30px rgba(0, 0, 0, 0.9);
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 1px 0 rgba(43, 33, 26, 0.02),
+    0 12px 30px -22px rgba(43, 33, 26, 0.18);
 }
 
-/* Breathing pulse — calm */
-@keyframes breath-cyan {
-  0%,
-  100% {
+.linen-card:hover {
+  background: var(--linen-deep);
+}
+
+/* Wax-seal button — Burnt Sienna, tactile, embossed */
+.wax-seal {
+  position: relative;
+  background: radial-gradient(
+    circle at 35% 28%,
+    #c47a5e 0%,
+    #a35c44 38%,
+    #8a4a36 100%
+  );
+  color: #fdfbf7;
+  font-family: "Playfair Display", serif;
+  letter-spacing: 0.01em;
+  border: 1px solid #6a3a28;
+  box-shadow:
+    inset 0 2px 4px rgba(255, 220, 200, 0.35),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.3),
+    0 6px 18px -6px rgba(138, 74, 54, 0.55),
+    0 24px 60px -28px rgba(43, 33, 26, 0.5);
+  transition:
+    transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.wax-seal:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 220, 200, 0.4),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.32),
+    0 10px 26px -6px rgba(138, 74, 54, 0.6),
+    0 30px 80px -28px rgba(43, 33, 26, 0.55);
+}
+.wax-seal:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 -1px 3px rgba(255, 220, 200, 0.2),
+    0 2px 8px -2px rgba(138, 74, 54, 0.4);
+}
+
+/* Hairline gold rule */
+.rule-gold {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--gold) 30%,
+    var(--gold) 70%,
+    transparent
+  );
+}
+
+/* Premium sheet of paper (Flow Frame) */
+.sheet {
+  background:
+    linear-gradient(180deg, #fffaf2 0%, #fdfbf7 100%);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 30px 60px -30px rgba(43, 33, 26, 0.18),
+    0 80px 120px -60px rgba(43, 33, 26, 0.12);
+  position: relative;
+}
+.sheet::after {
+  /* fold-shadow on the right edge */
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  background: linear-gradient(
+    to left,
+    rgba(43, 33, 26, 0.06),
+    transparent
+  );
+  border-radius: 0 6px 6px 0;
+  pointer-events: none;
+}
+
+/* Organic breathing for the active topic ring (sienna) */
+@keyframes breathe-sienna {
+  0%, 100% {
     box-shadow:
-      0 0 0 1px rgba(0, 240, 255, 0.12),
-      0 0 60px -10px rgba(0, 240, 255, 0.18),
-      inset 0 0 40px -20px rgba(0, 240, 255, 0.18);
+      0 0 0 1px rgba(163, 92, 68, 0.18),
+      0 0 60px -10px rgba(163, 92, 68, 0.14);
   }
   50% {
     box-shadow:
-      0 0 0 1px rgba(0, 240, 255, 0.28),
-      0 0 120px -10px rgba(0, 240, 255, 0.42),
-      inset 0 0 60px -10px rgba(0, 240, 255, 0.32);
+      0 0 0 1px rgba(163, 92, 68, 0.32),
+      0 0 100px -10px rgba(163, 92, 68, 0.28);
   }
 }
-
-@keyframes breath-amber {
-  0%,
-  100% {
+@keyframes breathe-warm {
+  0%, 100% {
     box-shadow:
-      0 0 0 1px rgba(255, 149, 0, 0.18),
-      0 0 70px -10px rgba(255, 149, 0, 0.28),
-      inset 0 0 40px -20px rgba(255, 149, 0, 0.22);
+      0 0 0 1px rgba(197, 160, 89, 0.28),
+      0 0 80px -10px rgba(197, 160, 89, 0.22);
   }
   50% {
     box-shadow:
-      0 0 0 1px rgba(255, 149, 0, 0.42),
-      0 0 140px -10px rgba(255, 149, 0, 0.55),
-      inset 0 0 70px -10px rgba(255, 149, 0, 0.4);
+      0 0 0 1px rgba(197, 160, 89, 0.46),
+      0 0 130px -10px rgba(197, 160, 89, 0.38);
   }
 }
-
-.pulse-cyan {
-  animation: breath-cyan 4.2s ease-in-out infinite;
+.breathe-sienna {
+  animation: breathe-sienna 5s ease-in-out infinite;
 }
-.pulse-amber {
-  animation: breath-amber 2.6s ease-in-out infinite;
-}
-
-/* Topographic ridge animation */
-@keyframes ridge-drift {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 600px 600px;
-  }
+.breathe-warm {
+  animation: breathe-warm 3.2s ease-in-out infinite;
 }
 
-.topo-bg {
-  background-image:
-    radial-gradient(circle at 20% 30%, rgba(0, 240, 255, 0.06), transparent 45%),
-    radial-gradient(circle at 80% 70%, rgba(0, 240, 255, 0.04), transparent 40%),
-    repeating-radial-gradient(
-      circle at 50% 50%,
-      rgba(255, 255, 255, 0.025) 0,
-      rgba(255, 255, 255, 0.025) 1px,
-      transparent 1px,
-      transparent 28px
-    );
+/* Watercolor blob (used in Mastery Topography) */
+.watercolor {
+  filter: blur(0.3px) saturate(1.1);
 }
 
-/* Glow text */
-.glow-cyan {
-  text-shadow: 0 0 24px rgba(0, 240, 255, 0.55);
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
 }
-
-/* Path dash animation */
-@keyframes dash-flow {
-  to {
-    stroke-dashoffset: -300;
-  }
-}
-.path-flow {
-  stroke-dasharray: 6 12;
-  animation: dash-flow 8s linear infinite;
-}
-
-/* Custom focus ring for inputs */
 input:focus,
 textarea:focus,
-button:focus {
+button:focus,
+select:focus {
   outline: none;
 }
-
-/* Hide number-input arrows */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
