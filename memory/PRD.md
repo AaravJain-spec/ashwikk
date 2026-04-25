@@ -1,75 +1,83 @@
-# StudyOS / ContextOS — PRD
+# StudyOS — AI Study Agent · PRD
 
 ## Original problem statement
-Behavior-adaptive study OS as a Dynamic Canvas. Round 2: pivot to **Quiet
-Luxury / High-End Academic Minimalism** — NO dark mode, NO pure black.
-Champagne Cream + Burnt Sienna + Muted Gold, Playfair Display + Instrument
-Sans, watercolor topography, wax-seal CTA, Bento dashboard, struggle-sensitive
-breathing background, priority engine, premium-paper Flow Frame.
+Build StudyOS as an autonomous AI study agent that **decides what to study,
+runs the session, detects struggle, and adapts dynamically** — not a
+dashboard, not a planner. ONE SCREEN = ONE ACTION. Five engines: Context,
+Decision, Execution, Struggle Detection, Prediction. Plus syllabus upload +
+country/class onboarding with national-curriculum fallback (CBSE NCERT for
+India, etc.).
 
 ## Architecture
-- **Backend**: FastAPI + Motor (async MongoDB), JWT auth (HS256, bcrypt).
-  Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) via `emergentintegrations.LlmChat`
-  + Emergent Universal LLM key. Topics now carry `last_touched_at` (set on
-  session start) for the priority engine's TimeDecay term.
+- **Backend**: FastAPI + Motor (MongoDB), JWT auth, Claude Sonnet 4.5
+  (`claude-sonnet-4-5-20250929`) via `emergentintegrations.LlmChat` + Emergent
+  Universal LLM key.
 - **Frontend**: React 19 + framer-motion + lucide-react. Single-page state
-  machine (Auth → BentoDashboard ↔ FlowFrame; SocraticSidekick slide-in
-  overlay). `useContextEngine` hook fuses idle / velocity / replays into a
-  smoothed CognitiveLoad ∈ [0,1]; isStruggling = load > 0.8 toggles
-  `body.classList.struggling` for the global cream→warm-cream morph.
-- **MongoDB collections**: `users`, `topics`, `sessions`, `chat_messages`.
+  machine: auth → onboarding → hero ↔ active ↔ insights, with a Sidekick
+  slide-in overlay.
+- **Engines**:
+  - **Context Engine** (frontend `useContextEngine`): idleTime + inputVelocity
+    + videoReplayCount → CognitiveLoad ∈ [0,1]; isStruggling = load > 0.8.
+  - **Decision Engine** (frontend `priorityEngine`): `priority = MasteryGap*0.5
+    + TimeDecay*0.3 - Confidence*0.2`; weakest topic surfaces as Next Move.
+  - **Execution Engine** (backend `/sessions/{id}/question` + `/answer`):
+    Claude generates an exam-style question; Claude evaluates the answer with
+    {correct, score, feedback}; auto-difficulty (medium → escalates after 2
+    correct; → easy after 2 wrong; or forced easy via `easier:true`).
+  - **Struggle Detection**: 3 wrong in a row OR struggle_score > 80 →
+    `should_interrupt=true` + StruggleModal in UI offering "Try easier" or
+    "Solve 2 quick questions" or "Push through".
+  - **Prediction Engine** (backend `/insights`): rule-based weak topics +
+    patterns ("avoids difficult topics", "wrong-answer cascades") + per-topic
+    marks-loss range.
 
-## Visual language
-- **Background**: #FDFBF7 (Champagne Cream); struggle: #FFF5F0
-- **Card**: #F2EDE4 (Soft Linen) + 1px #E5DED0 hairline
-- **Accents**: #A35C44 Burnt Sienna (CTAs, struggle ring), #C5A059 Muted Gold
-  (rules, Roman pillars, secondary)
-- **Type**: Playfair Display (serif), Instrument Sans (UI), Instrument Serif
+## Visual language (Quiet Luxury)
+- Background **#FDFBF7** (Champagne Cream); struggle morph **#FFF5F0**
+- Cards **#F2EDE4** (Soft Linen) + 1px **#E5DED0** hairline
+- Accents **#A35C44** (Burnt Sienna) for CTAs/struggle, **#C5A059** (Muted
+  Gold) for rules/secondary
+- Type: Playfair Display (display) + Instrument Sans (UI) + Instrument Serif
   (italic body)
-- **Signature element**: tactile **wax-seal** button (radial-gradient sienna +
-  embossed inner shadow + lift on hover)
-- **Mastery topography**: blurred radial-gradient watercolor blobs (sienna
-  saturation maps to mastery), italic serif labels — no bars, no harsh edges.
+- Signature: tactile **wax-seal** button (radial-gradient sienna + embossed
+  shadow + lift on hover)
 
-## Core implementations (2026-04-25)
-- Auth: `/auth/signup`, `/auth/login`, `/auth/me` (JWT)
-- Topics: `/topics` (now with `last_touched_at`)
-- Sessions: `/sessions/start` (writes last_touched_at), `/struggle`, `/end`,
-  `/sessions`
-- Socratic chat: `/chat/socratic`, `/chat/history` — multi-turn Claude 4.5
-- `useContextEngine`: idleTime + inputVelocity (chars/s over 6s window) +
-  videoReplayCount (`recordReplay()`); manual override window (6s sticky) for
-  demo + tests via `setLoadOverride`.
-- `priorityEngine.js`: `Priority = MasteryGap*0.5 + TimeDecay*0.3 -
-  Confidence*0.2`; HALF_LIFE_DAYS = 7 (saturating exponential decay); untouched
-  topics get full decay = 1.
-- `BentoDashboard`: Daily Intent hero, wax-seal Next Action card (priority
-  engine pick + reason), Mastery Topography watercolor SVG, today/state
-  micro-cards, Reading Room (recent sessions), The Stack (priority list).
-- `FlowFrame`: scaled-down + fade-out via AnimatePresence; central "premium
-  sheet of paper" with serif title + gold rule + italic body, hover
-  quick-reference cards on difficult terms, large serif timer, mastery readout,
-  notes pad, dev cogload slider, breathing border (sienna→amber on struggle).
-- `SocraticSidekick`: editorial column. When struggle is detected (edge), the
-  panel **auto-opens** with a Socratic Hint card. Manual chat with Claude 4.5
-  with multi-turn history.
+## API surface
+**Auth & profile**: `/auth/signup` `/auth/login` `/auth/me` `/profile` (PUT)
 
-## Test status
-- Backend: **19/19 pytest** (iteration 3, 100%).
-- Frontend: full Playwright flows pass (iteration 2, 98%; UI not retested in
-  iter 3 because no UI changes were made).
+**Syllabus**: `/syllabus/options` · `/syllabus/national` (preview) ·
+`/syllabus/apply-national` · `/syllabus/upload` (PDF/text/paste) ·
+`/syllabus/skip` (defaults)
+
+**Topics & sessions**: `/topics` · `/sessions/start` · `/sessions/{id}/struggle`
+· `/sessions/{id}/end` · `/sessions`
+
+**Q&A engine**: `POST /sessions/{id}/question` (auto-difficulty + `easier:bool`)
+· `POST /sessions/{id}/answer` (returns correctness + streak + interrupt
+signal + insight) · `POST /sessions/{id}/event` (logs behavior)
+
+**Sidekick**: `/chat/socratic` · `/chat/history`
+
+**Insights**: `GET /insights` (weak_topics, patterns, predictions, totals)
+
+## What's been implemented (2026-04-25)
+- Auth + JWT, onboarding (5 countries × multiple classes), syllabus upload via
+  Claude parsing, Q&A engine with real Claude evaluation, struggle interrupt,
+  insights with marks-loss predictions, Sidekick chat, breathing background,
+  wax-seal aesthetics throughout.
+- **Tested**: **40/40 backend pytest pass** (8 Q&A engine + 19 studyos + 13
+  syllabus); full frontend happy path verified end-to-end with Playwright.
 
 ## Backlog (P1/P2)
-- P1: Real automatic struggle detection via signal blending only (already
-  works; the dev slider is purely a demo/test affordance — could be hidden
-  behind a feature flag for production).
-- P1: Gesture-based "circle a region of a diagram" → Hint Bridge popup.
-- P2: Streaming Sidekick replies; optimize chat history replay.
-- P2: Hydration warning investigation: testing agent flagged a possible
-  `<span> in <option>` warning; not reproduced in latest run.
-- P2: Split FlowFrame.jsx into smaller components.
-- P2: Topographical 3D map upgrade with react-three-fiber (current SVG
-  watercolor is on-brand; 3D could be a future Volume II enhancement).
+- P1: Real automatic struggle detection from text-input pauses (already works
+  via useContextEngine; the dev cogload slider could be hidden behind a flag).
+- P1: Wire `recordReplay` into the active-session ghost UI for content video
+  re-watches when video material is added.
+- P1: Surface Claude-generated explanation links from feedback into a
+  one-click "explain this" sidekick prompt.
+- P2: Streaming Claude responses for the Sidekick + question generation.
+- P2: PDF generation of an end-of-session "passage" recap (export as PNG/PDF).
+- P2: Spaced-repetition scheduler that schedules tomorrow's first move.
+- P2: A real 3D map upgrade for the topography view (Volume II).
 
 ## Next tasks
 - Wait for user feedback / new requests.
