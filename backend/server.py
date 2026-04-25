@@ -97,6 +97,7 @@ class Topic(BaseModel):
     mastery: int
     x: float
     y: float
+    last_touched_at: Optional[str] = None
 
 
 class StartSessionIn(BaseModel):
