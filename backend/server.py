@@ -696,6 +696,419 @@ async def chat_history(session_id: str, user=Depends(current_user)):
     return docs
 
 
+# ─── routes: Q&A engine ────────────────────────────────────────────────────
+class Question(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    session_id: str
+    topic_id: str
+    topic_name: str
+    prompt: str
+    expected: str
+    difficulty: str
+    type: str = "short_answer"
+    created_at: str
+
+
+class AskQuestionIn(BaseModel):
+    easier: bool = False  # forced easy difficulty
+
+
+class SubmitAnswerIn(BaseModel):
+    question_id: str
+    answer: str
+    elapsed_ms: int = 0
+
+
+class AnswerResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    question_id: str
+    correct: bool
+    score: int
+    feedback: str
+    streak_correct: int
+    streak_wrong: int
+    total_answered: int
+    accuracy: float
+    should_interrupt: bool = False
+    interrupt_reason: Optional[str] = None
+    next_difficulty: str
+    insight: str  # short HUD line
+
+
+def _safe_json(s: str) -> dict:
+    """Tolerant JSON parser: strips ```json fences, slices first { to last }."""
+    import json as _json
+    s = (s or "").strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1] if "```" in s else s
+        if s.startswith("json"):
+            s = s[4:]
+        s = s.strip("` \n")
+    try:
+        return _json.loads(s)
+    except _json.JSONDecodeError:
+        try:
+            i = s.index("{")
+            j = s.rindex("}")
+            return _json.loads(s[i:j + 1])
+        except Exception:
+            return {}
+
+
+async def _gen_question(topic_name: str, domain: str, difficulty: str, avoid: list[str]) -> dict:
+    avoid_str = ""
+    if avoid:
+        joined = " | ".join(a[:120] for a in avoid[-5:])
+        avoid_str = f" Avoid duplicating these previous prompts: {joined}."
+    sys_msg = (
+        "You are an expert tutor. Generate ONE concise, original practice question for the topic. "
+        "Return ONLY valid JSON with no markdown, no commentary, in this exact form:\n"
+        '{"prompt": "the question text", "expected": "model answer or key idea (1-3 lines)", '
+        '"difficulty": "easy|medium|hard"}\n'
+        "Rules:\n"
+        "- prompt: 1-3 sentences, solvable in under 4 minutes, exam-style\n"
+        "- match the requested difficulty\n"
+        "- expected: a brief model answer or key concept that lets a grader check correctness\n"
+        "- avoid trick questions and ambiguity"
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"q-{uuid.uuid4()}",
+        system_message=sys_msg,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    user_text = f"Topic: {topic_name} ({domain}). Difficulty: {difficulty}.{avoid_str}"
+    try:
+        reply = await chat.send_message(UserMessage(text=user_text))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"AI question gen failed: {e}") from e
+    data = _safe_json(str(reply))
+    if not data.get("prompt") or not data.get("expected"):
+        raise HTTPException(502, "AI returned malformed question")
+    data.setdefault("difficulty", difficulty)
+    return data
+
+
+async def _eval_answer(prompt: str, expected: str, answer: str) -> dict:
+    sys_msg = (
+        "You are a fair, encouraging tutor. Compare the student's answer to the expected answer "
+        "and decide correctness. Be lenient on phrasing if the core idea is right. "
+        "Return ONLY valid JSON: "
+        '{"correct": true|false, "score": 0-100, "feedback": "1-2 sentences, no preaching, no emoji"}.'
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"ev-{uuid.uuid4()}",
+        system_message=sys_msg,
+    ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+    text = (
+        f"QUESTION: {prompt}\n\n"
+        f"EXPECTED: {expected}\n\n"
+        f"STUDENT ANSWER: {answer}"
+    )
+    try:
+        reply = await chat.send_message(UserMessage(text=text))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"AI eval failed: {e}") from e
+    data = _safe_json(str(reply))
+    if "correct" not in data:
+        # fallback heuristic if AI failed
+        return {
+            "correct": False,
+            "score": 0,
+            "feedback": "Could not evaluate that automatically — try again.",
+        }
+    data["correct"] = bool(data["correct"])
+    data["score"] = max(0, min(100, int(data.get("score", 0))))
+    data["feedback"] = str(data.get("feedback", "")).strip() or "Noted."
+    return data
+
+
+def _next_difficulty(current: str, last_correct: bool, streak_correct: int, streak_wrong: int) -> str:
+    if streak_correct >= 2:
+        if current == "easy":
+            return "medium"
+        if current == "medium":
+            return "hard"
+        return "hard"
+    if streak_wrong >= 2:
+        if current == "hard":
+            return "medium"
+        if current == "medium":
+            return "easy"
+        return "easy"
+    return current
+
+
+def _live_insight(streak_correct: int, streak_wrong: int, accuracy: float, idle_high: bool) -> str:
+    if streak_wrong >= 3:
+        return "the room is breathing — let's slow down and try an easier path."
+    if streak_correct >= 3:
+        return "fast streak — pushing the difficulty up."
+    if streak_wrong == 2:
+        return "two off in a row — focus on the core idea, not the detail."
+    if accuracy >= 0.8 and streak_correct >= 1:
+        return "in flow."
+    if idle_high:
+        return "you're slowing down — take one breath, then commit."
+    return "steady."
+
+
+@api.post("/sessions/{session_id}/question", response_model=Question)
+async def session_next_question(session_id: str, body: AskQuestionIn = AskQuestionIn(), user=Depends(current_user)):
+    sess = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
+    if not sess:
+        raise HTTPException(404, "session not found")
+    topic = await db.topics.find_one({"id": sess["topic_id"], "user_id": user["id"]})
+    if not topic:
+        raise HTTPException(404, "topic not found")
+
+    # streak-aware difficulty (or forced easy via `easier`)
+    streak_correct = sess.get("streak_correct", 0)
+    streak_wrong = sess.get("streak_wrong", 0)
+    last_difficulty = sess.get("last_difficulty", "medium")
+    if body.easier:
+        difficulty = "easy"
+    else:
+        # advance based on prior streak
+        difficulty = _next_difficulty(last_difficulty, True, streak_correct, streak_wrong)
+
+    # avoid recent prompts
+    recent = await db.questions.find(
+        {"session_id": session_id, "user_id": user["id"]},
+        {"_id": 0, "prompt": 1},
+    ).sort("created_at", -1).to_list(8)
+    avoid = [r["prompt"] for r in recent]
+
+    gen = await _gen_question(topic["name"], topic.get("domain", ""), difficulty, avoid)
+
+    q_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "session_id": session_id,
+        "topic_id": topic["id"],
+        "topic_name": topic["name"],
+        "prompt": gen["prompt"],
+        "expected": gen["expected"],
+        "difficulty": gen.get("difficulty", difficulty),
+        "type": "short_answer",
+        "answered": False,
+        "correct": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.questions.insert_one(q_doc)
+    await db.sessions.update_one(
+        {"id": session_id, "user_id": user["id"]},
+        {"$set": {"last_difficulty": q_doc["difficulty"]}},
+    )
+    out = {k: v for k, v in q_doc.items() if k not in {"user_id", "answered", "correct"}}
+    return Question(**out)
+
+
+@api.post("/sessions/{session_id}/answer", response_model=AnswerResult)
+async def session_submit_answer(session_id: str, body: SubmitAnswerIn, user=Depends(current_user)):
+    sess = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
+    if not sess:
+        raise HTTPException(404, "session not found")
+    q = await db.questions.find_one({"id": body.question_id, "user_id": user["id"]})
+    if not q:
+        raise HTTPException(404, "question not found")
+    if q.get("answered"):
+        raise HTTPException(409, "question already answered")
+
+    eval_result = await _eval_answer(q["prompt"], q["expected"], body.answer)
+    correct = eval_result["correct"]
+
+    streak_correct = sess.get("streak_correct", 0)
+    streak_wrong = sess.get("streak_wrong", 0)
+    if correct:
+        streak_correct += 1
+        streak_wrong = 0
+    else:
+        streak_wrong += 1
+        streak_correct = 0
+
+    total = sess.get("total_answered", 0) + 1
+    correct_count = sess.get("correct_count", 0) + (1 if correct else 0)
+    accuracy = correct_count / total if total else 0.0
+    struggle_score = max(0, min(100, sess.get("struggle_score", 0)))
+    idle_high = struggle_score > 60
+
+    insight = _live_insight(streak_correct, streak_wrong, accuracy, idle_high)
+    next_difficulty = _next_difficulty(q["difficulty"], correct, streak_correct, streak_wrong)
+
+    should_interrupt = streak_wrong >= 3 or struggle_score > 80
+    interrupt_reason = None
+    if streak_wrong >= 3:
+        interrupt_reason = f"3 wrong in a row on {q['topic_name'].lower()}"
+    elif struggle_score > 80:
+        interrupt_reason = "cognitive load is high"
+
+    # mark question
+    await db.questions.update_one(
+        {"id": body.question_id},
+        {"$set": {
+            "answered": True,
+            "correct": correct,
+            "score": eval_result["score"],
+            "feedback": eval_result["feedback"],
+            "answer": body.answer,
+            "elapsed_ms": int(body.elapsed_ms or 0),
+            "answered_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    # update session counters
+    await db.sessions.update_one(
+        {"id": session_id, "user_id": user["id"]},
+        {"$set": {
+            "streak_correct": streak_correct,
+            "streak_wrong": streak_wrong,
+            "total_answered": total,
+            "correct_count": correct_count,
+            "last_difficulty": next_difficulty,
+        }},
+    )
+
+    return AnswerResult(
+        question_id=body.question_id,
+        correct=correct,
+        score=eval_result["score"],
+        feedback=eval_result["feedback"],
+        streak_correct=streak_correct,
+        streak_wrong=streak_wrong,
+        total_answered=total,
+        accuracy=round(accuracy, 3),
+        should_interrupt=should_interrupt,
+        interrupt_reason=interrupt_reason,
+        next_difficulty=next_difficulty,
+        insight=insight,
+    )
+
+
+@api.post("/sessions/{session_id}/event")
+async def session_event(session_id: str, body: dict, user=Depends(current_user)):
+    """Log a behavior event: 'easier_requested' | 'replay' | 'interrupt_dismissed'."""
+    sess = await db.sessions.find_one({"id": session_id, "user_id": user["id"]})
+    if not sess:
+        raise HTTPException(404, "session not found")
+    ev = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "session_id": session_id,
+        "topic_id": sess.get("topic_id"),
+        "type": str(body.get("type", "unknown"))[:64],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.events.insert_one(ev)
+    return {"ok": True, "id": ev["id"]}
+
+
+# ─── routes: insights ──────────────────────────────────────────────────────
+@api.get("/insights")
+async def insights(user=Depends(current_user)):
+    user_id = user["id"]
+    topics = await db.topics.find(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    ).to_list(500)
+    questions = await db.questions.find(
+        {"user_id": user_id, "answered": True},
+        {"_id": 0, "user_id": 0},
+    ).to_list(2000)
+    sessions = await db.sessions.find(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    ).to_list(500)
+    events = await db.events.find(
+        {"user_id": user_id}, {"_id": 0, "user_id": 0}
+    ).to_list(500)
+
+    # accuracy by topic_id
+    by_topic: dict = {}
+    for q in questions:
+        t = by_topic.setdefault(q.get("topic_id"), {"total": 0, "correct": 0, "name": q.get("topic_name", "")})
+        t["total"] += 1
+        if q.get("correct"):
+            t["correct"] += 1
+
+    # weak topics: lowest mastery (preferred) or lowest accuracy
+    weak_sorted = sorted(topics, key=lambda x: (x.get("mastery", 0), x.get("name", "")))[:5]
+    weak_topics = []
+    for t in weak_sorted:
+        acc = None
+        bt = by_topic.get(t["id"])
+        if bt and bt["total"]:
+            acc = round(bt["correct"] / bt["total"] * 100)
+        weak_topics.append({
+            "id": t["id"],
+            "name": t["name"],
+            "domain": t.get("domain", ""),
+            "mastery": t.get("mastery", 0),
+            "accuracy": acc,
+        })
+
+    # patterns
+    patterns = []
+    avg_struggle = (
+        sum(s.get("struggle_score", 0) for s in sessions) / max(1, len(sessions))
+    )
+    if avg_struggle > 55:
+        patterns.append({
+            "label": "often hits cognitive overload",
+            "detail": f"avg struggle score {avg_struggle:.0f} across {len(sessions)} sessions",
+        })
+
+    easier_events = [e for e in events if e.get("type") == "easier_requested"]
+    if len(easier_events) >= 2:
+        patterns.append({
+            "label": "tends to switch to easier when challenged",
+            "detail": f"{len(easier_events)} easier-mode requests",
+        })
+
+    avoidance_topics = [t["name"] for t in topics if t.get("mastery", 0) < 30]
+    if len(avoidance_topics) >= 3:
+        patterns.append({
+            "label": "avoids difficult topics",
+            "detail": f"{len(avoidance_topics)} topics still under 30% mastery",
+        })
+
+    if any(s.get("streak_wrong", 0) >= 3 for s in sessions):
+        patterns.append({
+            "label": "wrong-answer cascades during sessions",
+            "detail": "got 3+ wrong in a row in at least one session",
+        })
+
+    # predictions: rough rule-based marks loss per topic
+    predictions = []
+    for t in weak_sorted:
+        if t.get("mastery", 0) < 60:
+            est = round((100 - t.get("mastery", 0)) / 100 * 18)
+            predictions.append({
+                "topic": t["name"],
+                "domain": t.get("domain", ""),
+                "marks_loss_min": max(3, est - 3),
+                "marks_loss_max": est + 3,
+            })
+
+    # session totals
+    total_questions = len(questions)
+    total_correct = sum(1 for q in questions if q.get("correct"))
+    overall_accuracy = (
+        round(total_correct / total_questions * 100) if total_questions else None
+    )
+
+    return {
+        "weak_topics": weak_topics,
+        "patterns": patterns,
+        "predictions": predictions,
+        "totals": {
+            "topics": len(topics),
+            "sessions": len(sessions),
+            "questions": total_questions,
+            "correct": total_correct,
+            "overall_accuracy": overall_accuracy,
+        },
+    }
+
+
 # ─── plumbing ──────────────────────────────────────────────────────────────
 app.include_router(api)
 app.add_middleware(

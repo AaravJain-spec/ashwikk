@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import "@/App.css";
 import { api, getToken, clearToken } from "@/lib/api";
+import ActiveSession from "@/components/ActiveSession";
 import AuthScreen from "@/components/AuthScreen";
-import BentoDashboard from "@/components/BentoDashboard";
-import FlowFrame from "@/components/FlowFrame";
+import HeroScreen from "@/components/HeroScreen";
+import InsightsScreen from "@/components/InsightsScreen";
 import Onboarding from "@/components/Onboarding";
 import SocraticSidekick from "@/components/SocraticSidekick";
 import useContextEngine from "@/hooks/useContextEngine";
@@ -14,7 +15,9 @@ export default function App() {
   const [bootChecked, setBootChecked] = useState(false);
   const [topics, setTopics] = useState([]);
   const [sessions, setSessions] = useState([]);
+  const [view, setView] = useState("hero"); // "hero" | "active" | "insights"
   const [activeTopic, setActiveTopic] = useState(null);
+  const [activeDuration, setActiveDuration] = useState(25);
   const [activeSession, setActiveSession] = useState(null);
   const [sidekickOpen, setSidekickOpen] = useState(false);
   const [autoHint, setAutoHint] = useState(false);
@@ -39,7 +42,7 @@ export default function App() {
       .finally(() => setBootChecked(true));
   }, []);
 
-  // load topics + sessions whenever user changes (and after a session)
+  // topics + sessions whenever user changes (and after a session ends)
   useEffect(() => {
     if (!user || !user.onboarded) return;
     Promise.all([api.get("/topics"), api.get("/sessions")])
@@ -48,11 +51,11 @@ export default function App() {
         setSessions(s.data);
       })
       .catch(() => {});
-  }, [user, activeTopic]);
+  }, [user, view]); // re-fetch on view change (after session end)
 
-  // poll for active session on flow entry
+  // poll for the live session id once we enter active view
   useEffect(() => {
-    if (!activeTopic) {
+    if (view !== "active" || !activeTopic) {
       setActiveSession(null);
       return;
     }
@@ -78,7 +81,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeTopic]);
+  }, [view, activeTopic]);
 
   useEffect(() => {
     if (ctx.isStruggling && !struggleEdgeRef.current) {
@@ -98,6 +101,7 @@ export default function App() {
     setSessions([]);
     setActiveTopic(null);
     setSidekickOpen(false);
+    setView("hero");
     setShowOnboarding(false);
   }
 
@@ -109,6 +113,20 @@ export default function App() {
   function handleOnboardingDone(u) {
     setUser(u);
     setShowOnboarding(false);
+    setView("hero");
+  }
+
+  function handleStartSession(topic, minutes = 25) {
+    setActiveTopic(topic);
+    setActiveDuration(minutes);
+    setView("active");
+  }
+
+  function handleExitActive() {
+    setActiveTopic(null);
+    setActiveSession(null);
+    setSidekickOpen(false);
+    setView("hero");
   }
 
   if (!bootChecked) {
@@ -130,35 +148,38 @@ export default function App() {
   return (
     <div className="App">
       <AnimatePresence mode="wait">
-        {activeTopic ? (
-          <FlowFrame
-            key="flow"
+        {view === "active" && activeTopic && (
+          <ActiveSession
+            key="active"
             topic={activeTopic}
+            durationMinutes={activeDuration}
             ctx={ctx}
-            onExit={() => {
-              setActiveTopic(null);
-              setSidekickOpen(false);
-            }}
+            onExit={handleExitActive}
             onOpenSidekick={() => {
               setSidekickOpen(true);
               setAutoHint(false);
             }}
           />
-        ) : (
-          <BentoDashboard
-            key="dashboard"
+        )}
+        {view === "insights" && (
+          <InsightsScreen key="insights" onBack={() => setView("hero")} />
+        )}
+        {view === "hero" && (
+          <HeroScreen
+            key="hero"
             user={user}
             topics={topics}
             sessions={sessions}
             cognitiveLoad={ctx.cognitiveLoad}
             isStruggling={ctx.isStruggling}
-            onPickTopic={(t) => setActiveTopic(t)}
+            onStart={handleStartSession}
             onLogout={handleLogout}
+            onChangeSyllabus={() => setShowOnboarding(true)}
+            onOpenInsights={() => setView("insights")}
             onOpenSidekick={() => {
               setSidekickOpen(true);
               setAutoHint(false);
             }}
-            onChangeSyllabus={() => setShowOnboarding(true)}
           />
         )}
       </AnimatePresence>
