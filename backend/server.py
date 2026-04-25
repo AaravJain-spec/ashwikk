@@ -759,25 +759,38 @@ def _safe_json(s: str) -> dict:
 async def _gen_question(topic_name: str, domain: str, difficulty: str, avoid: list[str]) -> dict:
     avoid_str = ""
     if avoid:
-        joined = " | ".join(a[:120] for a in avoid[-5:])
-        avoid_str = f" Avoid duplicating these previous prompts: {joined}."
+        # cap to last 12 prompts so the system message stays small
+        joined = "\n  - ".join(a[:140] for a in avoid[:12])
+        avoid_str = (
+            f"\n\nDo NOT repeat or paraphrase any of these previous questions on this topic:\n  - {joined}"
+        )
+    # rotate angle to encourage variety
+    angles = [
+        "compute / calculate", "prove / justify", "compare / contrast",
+        "apply to a real-world scenario", "spot the error / debug",
+        "predict / estimate", "explain the intuition", "construct an example",
+    ]
+    seed_angle = angles[uuid.uuid4().int % len(angles)]
     sys_msg = (
         "You are an expert tutor. Generate ONE concise, original practice question for the topic. "
+        "Each call MUST produce a fresh question — vary the angle, the numbers, the framing. "
         "Return ONLY valid JSON with no markdown, no commentary, in this exact form:\n"
         '{"prompt": "the question text", "expected": "model answer or key idea (1-3 lines)", '
         '"difficulty": "easy|medium|hard"}\n'
         "Rules:\n"
         "- prompt: 1-3 sentences, solvable in under 4 minutes, exam-style\n"
+        f"- preferred angle for this question: {seed_angle}\n"
         "- match the requested difficulty\n"
         "- expected: a brief model answer or key concept that lets a grader check correctness\n"
         "- avoid trick questions and ambiguity"
+        f"{avoid_str}"
     )
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=f"q-{uuid.uuid4()}",
         system_message=sys_msg,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
-    user_text = f"Topic: {topic_name} ({domain}). Difficulty: {difficulty}.{avoid_str}"
+    user_text = f"Topic: {topic_name} ({domain}). Difficulty: {difficulty}."
     try:
         reply = await chat.send_message(UserMessage(text=user_text))
     except Exception as e:  # noqa: BLE001
@@ -873,11 +886,12 @@ async def session_next_question(session_id: str, body: AskQuestionIn = AskQuesti
         # advance based on prior streak
         difficulty = _next_difficulty(last_difficulty, True, streak_correct, streak_wrong)
 
-    # avoid recent prompts
+    # avoid recent prompts — pull from ALL prior questions on this topic
+    # (across sessions) so each visit yields a different question.
     recent = await db.questions.find(
-        {"session_id": session_id, "user_id": user["id"]},
+        {"topic_id": topic["id"], "user_id": user["id"]},
         {"_id": 0, "prompt": 1},
-    ).sort("created_at", -1).to_list(8)
+    ).sort("created_at", -1).to_list(20)
     avoid = [r["prompt"] for r in recent]
 
     gen = await _gen_question(topic["name"], topic.get("domain", ""), difficulty, avoid)

@@ -8,6 +8,7 @@ import HeroScreen from "@/components/HeroScreen";
 import InsightsScreen from "@/components/InsightsScreen";
 import Onboarding from "@/components/Onboarding";
 import SocraticSidekick from "@/components/SocraticSidekick";
+import SubjectChapterPicker from "@/components/SubjectChapterPicker";
 import useContextEngine from "@/hooks/useContextEngine";
 
 export default function App() {
@@ -164,6 +165,15 @@ export default function App() {
         {view === "insights" && (
           <InsightsScreen key="insights" onBack={() => setView("hero")} />
         )}
+        {view === "picker" && (
+          <SubjectChapterPicker
+            key="picker"
+            topics={topics}
+            user={user}
+            onCancel={() => setView("hero")}
+            onPick={(t, minutes) => handleStartSession(t, minutes)}
+          />
+        )}
         {view === "hero" && (
           <HeroScreen
             key="hero"
@@ -176,6 +186,7 @@ export default function App() {
             onLogout={handleLogout}
             onChangeSyllabus={() => setShowOnboarding(true)}
             onOpenInsights={() => setView("insights")}
+            onOpenPicker={() => setView("picker")}
             onOpenSidekick={() => {
               setSidekickOpen(true);
               setAutoHint(false);

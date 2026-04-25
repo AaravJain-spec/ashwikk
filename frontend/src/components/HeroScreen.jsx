@@ -17,6 +17,7 @@ export default function HeroScreen({
   onChangeSyllabus,
   onOpenInsights,
   onOpenSidekick,
+  onOpenPicker,
   cognitiveLoad,
   isStruggling,
 }) {
@@ -211,6 +212,15 @@ export default function HeroScreen({
                 <span>Start Session</span>
                 <ArrowRight size={22} strokeWidth={2.2} />
               </motion.button>
+
+              <button
+                type="button"
+                onClick={onOpenPicker}
+                data-testid="open-picker-btn"
+                className="mt-4 mx-auto block font-sans text-xs text-[#9b8e7e] hover:text-[#a35c44] tracking-wider transition-colors"
+              >
+                — or choose subject &amp; chapter yourself →
+              </button>
 
               <div className="mt-4 flex items-center justify-between font-sans text-[10px] tracking-[0.2em] uppercase text-[#9b8e7e]">
                 <span>priority {(nextAction?.priority ?? 0).toFixed(2)}</span>

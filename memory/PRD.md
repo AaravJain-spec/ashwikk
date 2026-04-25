@@ -64,8 +64,19 @@ signal + insight) · `POST /sessions/{id}/event` (logs behavior)
   Claude parsing, Q&A engine with real Claude evaluation, struggle interrupt,
   insights with marks-loss predictions, Sidekick chat, breathing background,
   wax-seal aesthetics throughout.
+- **Subject → Chapter picker** (`SubjectChapterPicker.jsx`): 2-step grid that
+  lets the student override the agent's pick — first a subject card, then a
+  ranked chapter list with selectable duration chips (10/15/25/45 min).
+  Reachable from a small "or choose subject & chapter yourself →" link
+  beneath the Hero's Start Session button.
+- **Question variety across sessions**: `_gen_question` now pulls the last 12
+  prior prompts on the same `topic_id` (across all sessions) into the
+  Claude system message as a do-not-repeat list, and seeds a rotating "angle"
+  hint (compute / prove / compare / apply / debug / predict / explain /
+  construct) so each visit yields a genuinely different question.
 - **Tested**: **40/40 backend pytest pass** (8 Q&A engine + 19 studyos + 13
-  syllabus); full frontend happy path verified end-to-end with Playwright.
+  syllabus); full frontend happy path verified end-to-end with Playwright;
+  3-session same-topic curl confirms three distinct questions on Real Numbers.
 
 ## Backlog (P1/P2)
 - P1: Real automatic struggle detection from text-input pauses (already works
