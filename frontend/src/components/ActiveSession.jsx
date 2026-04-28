@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Check, ChevronRight, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  ChevronRight,
+  ImagePlus,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import StruggleModal from "@/components/StruggleModal";
 
@@ -20,6 +27,7 @@ export default function ActiveSession({
   ctx,
   onExit,
   onOpenSidekick,
+  mixInfo = null,
 }) {
   const [session, setSession] = useState(null);
   const [question, setQuestion] = useState(null);
@@ -38,6 +46,12 @@ export default function ActiveSession({
   const [secondsLeft, setSecondsLeft] = useState(durationMinutes * 60);
   const [running, setRunning] = useState(true);
   const [done, setDone] = useState(false);
+
+  // attached picture-of-answer (data URL) — local-only companion to the typed answer
+  const [answerImage, setAnswerImage] = useState(null);
+  const [imageError, setImageError] = useState("");
+  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   const tickRef = useRef(null);
   const qStartRef = useRef(Date.now());
@@ -120,11 +134,38 @@ export default function ActiveSession({
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
   }
 
+  function handlePickImage(e) {
+    setImageError("");
+    const file = e?.target?.files?.[0];
+    // reset the input so picking the same file twice fires onChange
+    if (e?.target) e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setImageError("that file isn't an image");
+      return;
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      setImageError("image is over 6MB — try a smaller one");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAnswerImage(reader.result);
+    reader.onerror = () => setImageError("could not read that image");
+    reader.readAsDataURL(file);
+  }
+
+  function clearImage() {
+    setAnswerImage(null);
+    setImageError("");
+  }
+
   async function loadNext({ easier = false } = {}) {
     if (!session) return;
     setBusy(true);
     setFeedback(null);
     setAnswer("");
+    setAnswerImage(null);
+    setImageError("");
     try {
       const { data: q } = await api.post(`/sessions/${session.id}/question`, {
         easier,
@@ -140,13 +181,22 @@ export default function ActiveSession({
 
   async function submitAnswer(e) {
     e?.preventDefault();
-    if (!session || !question || submitting || feedback || !answer.trim()) return;
+    if (!session || !question || submitting || feedback) return;
+    // require either text or an attached image
+    const hasText = answer.trim().length > 0;
+    if (!hasText && !answerImage) return;
     setSubmitting(true);
     try {
       const elapsed_ms = Date.now() - qStartRef.current;
+      // append a marker for the AI grader so it knows a picture was attached
+      const submittedAnswer = hasText
+        ? answerImage
+          ? `${answer.trim()}\n\n[student also attached a picture of their handwritten work]`
+          : answer.trim()
+        : "[student submitted only a picture of their handwritten work]";
       const { data } = await api.post(`/sessions/${session.id}/answer`, {
         question_id: question.id,
-        answer: answer.trim(),
+        answer: submittedAnswer,
         elapsed_ms,
       });
       setFeedback({
@@ -294,7 +344,17 @@ export default function ActiveSession({
         >
           {/* topic */}
           <div className="flex items-center justify-between">
-            <div className="eyebrow">·· session · {topic.domain.toLowerCase()}</div>
+            <div className="eyebrow flex items-center gap-2">
+              <span>·· session · {topic.domain.toLowerCase()}</span>
+              {mixInfo && (
+                <span
+                  className="ml-1 px-2 py-0.5 rounded-full bg-[#fff5f0] border border-[#a35c44]/30 text-[#a35c44]"
+                  data-testid="mix-badge"
+                >
+                  mix · {mixInfo.index + 1}/{mixInfo.total}
+                </span>
+              )}
+            </div>
             <div className="font-instrument-serif italic text-[#c5a059] text-sm">
               {question?.difficulty
                 ? `· difficulty · ${question.difficulty}`
@@ -380,10 +440,79 @@ export default function ActiveSession({
                 disabled={submitting}
                 className="w-full bg-transparent border-b border-[#e5ded0] focus:border-[#a35c44] resize-none font-instrument-serif text-base text-[#2b211a] placeholder-[#c8bdab] py-2 leading-relaxed transition-colors disabled:opacity-50"
               />
-              <div className="mt-5 flex items-center gap-3">
+
+              {/* hidden inputs — file picker + camera capture */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePickImage}
+                className="hidden"
+                data-testid="answer-image-input"
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePickImage}
+                className="hidden"
+                data-testid="answer-camera-input"
+              />
+
+              {/* Attached-image preview */}
+              <AnimatePresence>
+                {answerImage && (
+                  <motion.div
+                    key="img-preview"
+                    initial={{ y: 6, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -4, opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="mt-4 flex items-start gap-4 p-3 rounded-2xl border border-[#e5ded0] bg-[#fffaf2]"
+                    data-testid="answer-image-preview"
+                  >
+                    <img
+                      src={answerImage}
+                      alt="your handwritten answer"
+                      className="h-24 w-24 object-cover rounded-xl border border-[#e5ded0]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="eyebrow text-[#a35c44]">·· picture attached</div>
+                      <p className="mt-1 font-instrument-serif italic text-sm text-[#5b4f44] leading-relaxed">
+                        a snapshot of your work will travel with this answer.
+                        you can still write a short note above to help the
+                        grader.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearImage}
+                      data-testid="remove-image-btn"
+                      className="text-[#9b8e7e] hover:text-[#a35c44] transition-colors p-1"
+                      title="remove picture"
+                    >
+                      <X size={16} />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {imageError && (
+                <div
+                  className="mt-2 font-sans text-[11px] tracking-wide text-[#a35c44] italic"
+                  data-testid="image-error"
+                >
+                  ! {imageError}
+                </div>
+              )}
+
+              <div className="mt-5 flex items-center gap-3 flex-wrap">
                 <button
                   type="submit"
-                  disabled={submitting || !answer.trim()}
+                  disabled={
+                    submitting || (!answer.trim() && !answerImage)
+                  }
                   data-testid="submit-answer-btn"
                   className="wax-seal h-12 px-7 rounded-full text-base disabled:opacity-50"
                 >
@@ -391,10 +520,31 @@ export default function ActiveSession({
                 </button>
                 <button
                   type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={submitting}
+                  data-testid="attach-image-btn"
+                  className="h-12 px-4 rounded-full border border-[#e5ded0] text-[#5b4f44] hover:border-[#a35c44] hover:text-[#a35c44] font-sans text-sm transition-colors flex items-center gap-2"
+                  title="attach a picture of your handwritten work"
+                >
+                  <ImagePlus size={14} />
+                  {answerImage ? "replace photo" : "attach photo"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={submitting}
+                  data-testid="capture-image-btn"
+                  className="h-12 w-12 rounded-full border border-[#e5ded0] text-[#5b4f44] hover:border-[#a35c44] hover:text-[#a35c44] transition-colors flex items-center justify-center"
+                  title="take a photo with your camera"
+                >
+                  <Camera size={16} />
+                </button>
+                <button
+                  type="button"
                   onClick={() => loadNext({ easier: false })}
                   disabled={busy || submitting}
                   data-testid="skip-question-btn"
-                  className="h-12 px-5 rounded-full border border-[#e5ded0] text-[#5b4f44] hover:border-[#a35c44] hover:text-[#a35c44] font-sans text-sm transition-colors flex items-center gap-2"
+                  className="h-12 px-5 rounded-full border border-[#e5ded0] text-[#5b4f44] hover:border-[#a35c44] hover:text-[#a35c44] font-sans text-sm transition-colors flex items-center gap-2 ml-auto"
                 >
                   skip <ChevronRight size={14} />
                 </button>
@@ -439,6 +589,21 @@ export default function ActiveSession({
                 <p className="mt-2 font-instrument-serif italic text-base text-[#2b211a] leading-relaxed">
                   {feedback.feedback}
                 </p>
+                {answerImage && (
+                  <div
+                    className="mt-4 flex items-center gap-3"
+                    data-testid="feedback-image"
+                  >
+                    <img
+                      src={answerImage}
+                      alt="your handwritten answer"
+                      className="h-20 w-20 object-cover rounded-xl border border-[#e5ded0]"
+                    />
+                    <span className="font-instrument-serif italic text-xs text-[#9b8e7e]">
+                      your attached picture for this rep
+                    </span>
+                  </div>
+                )}
                 <div className="mt-4 flex justify-end">
                   <button
                     onClick={() => loadNext()}
