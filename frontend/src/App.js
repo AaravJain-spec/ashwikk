@@ -23,6 +23,10 @@ export default function App() {
   const [sidekickOpen, setSidekickOpen] = useState(false);
   const [autoHint, setAutoHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // mix-mode queue: remaining topics to run sequentially (for cross-chapter mixed practice)
+  const [mixQueue, setMixQueue] = useState([]);
+  const [mixIndex, setMixIndex] = useState(0);
+  const [mixTotal, setMixTotal] = useState(0);
 
   const ctx = useContextEngine();
   const struggleEdgeRef = useRef(false);
@@ -117,13 +121,44 @@ export default function App() {
     setView("hero");
   }
 
-  function handleStartSession(topic, minutes = 25) {
-    setActiveTopic(topic);
+  function handleStartSession(topicOrList, minutes = 25) {
+    // Accept either a single topic or an array of topics for mix-mode.
+    if (Array.isArray(topicOrList)) {
+      const list = topicOrList.filter(Boolean);
+      if (list.length === 0) return;
+      // split duration roughly evenly across selected chapters (min 5 min each)
+      const per = Math.max(5, Math.round(minutes / list.length));
+      setMixQueue(list);
+      setMixIndex(0);
+      setMixTotal(list.length);
+      setActiveTopic(list[0]);
+      setActiveDuration(per);
+      setView("active");
+      return;
+    }
+    setMixQueue([]);
+    setMixIndex(0);
+    setMixTotal(0);
+    setActiveTopic(topicOrList);
     setActiveDuration(minutes);
     setView("active");
   }
 
   function handleExitActive() {
+    // If we're in a mix queue and there's a next chapter, advance to it
+    // instead of returning to the hero screen. The `key` on <ActiveSession>
+    // includes mixIndex so the component re-mounts cleanly for the next topic.
+    if (mixQueue.length > 0 && mixIndex + 1 < mixQueue.length) {
+      const nextIdx = mixIndex + 1;
+      setMixIndex(nextIdx);
+      setActiveTopic(mixQueue[nextIdx]);
+      setActiveSession(null);
+      setSidekickOpen(false);
+      return;
+    }
+    setMixQueue([]);
+    setMixIndex(0);
+    setMixTotal(0);
     setActiveTopic(null);
     setActiveSession(null);
     setSidekickOpen(false);
@@ -151,10 +186,15 @@ export default function App() {
       <AnimatePresence mode="wait">
         {view === "active" && activeTopic && (
           <ActiveSession
-            key="active"
+            key={`active-${activeTopic.id}-${mixIndex}`}
             topic={activeTopic}
             durationMinutes={activeDuration}
             ctx={ctx}
+            mixInfo={
+              mixTotal > 1
+                ? { index: mixIndex, total: mixTotal }
+                : null
+            }
             onExit={handleExitActive}
             onOpenSidekick={() => {
               setSidekickOpen(true);
